@@ -41,6 +41,10 @@ let Audio = function (src) {
     this._element = null;
     this.id = 0;
 
+    /**
+     * 追加実装. playbackRate(再生速度)の初期値.
+     */
+    this._playbackRate = 1;  
     this._volume = 1;
     this._loop = false;
     this._nextTime = 0;  // playback position to set
@@ -114,7 +118,8 @@ Audio.State = {
 
     proto._onLoaded = function () {
         this._createElement();
-        
+
+        this.setPlaybackRate(this._playbackRate);        
         this.setVolume(this._volume);
         this.setLoop(this._loop);
         if (this._nextTime !== 0) {
@@ -219,6 +224,20 @@ Audio.State = {
     };
     proto.getLoop = function () {
         return this._loop;
+    };
+
+    /** 
+     * 追加実装
+     * playbackRate(音声再生速度)
+     */
+    proto.setPlaybackRate = function(num){
+        this._playbackRate = num;
+        if(this._element){
+            this._element._playbackRate = num;
+        }
+    };
+    proto.getPlayBackRate = function(num){
+        return this._playbackRate;
     };
 
     proto.setVolume = function (num) {
@@ -326,11 +345,11 @@ Audio.State = {
             }
             else {
                 this._src = null;
-                if (this._element instanceof WebAudioElement) {
-                    this._element = null;
+                if (this._element instanceof HTMLAudioElement) {
+                    this._element.src = '';
                 }
                 else {
-                    this._element.src = '';
+                    this._element = null;
                 }
                 this._state = Audio.State.INITIALZING;
             }
@@ -374,6 +393,7 @@ let WebAudioElement = function (buffer, audio) {
 
     this._gainObj = this._context['createGain']();
     this.volume = 1;
+    this._playbackRate = 1;
 
     this._gainObj['connect'](this._context['destination']);
     this._loop = false;
@@ -403,6 +423,8 @@ let WebAudioElement = function (buffer, audio) {
         }
 
         let audio = this._context["createBufferSource"]();
+        //webaudio api内のplaybackRate.valueに設定した値を代入.
+        audio.playbackRate.value = this._playbackRate;        
         audio.buffer = this._buffer;
         audio["connect"](this._gainObj);
         audio.loop = this._loop;
@@ -451,12 +473,6 @@ let WebAudioElement = function (buffer, audio) {
                     });
                 }
             }, 10);
-        }
-        // HACK: fix mobile safari can't play
-        if (cc.sys.browserType === cc.sys.BROWSER_TYPE_SAFARI && cc.sys.isMobile) {
-            if (audio.context.state === 'interrupted') {
-                audio.context.resume();
-            }
         }
     };
 

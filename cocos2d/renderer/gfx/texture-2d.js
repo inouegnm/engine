@@ -4,9 +4,10 @@ import { enums, glFilter, glTextureFmt } from './enums';
 import { isPow2 } from './misc';
 
 /**
- * @typedef {HTMLImageElement | HTMLCanvasElement} HTMLImageSource
- * @typedef {HTMLImageSource | ArrayBufferView} ImageSource
- * @typedef {{width?: number, height?: number, minFilter?: number, magFilter?: number, mipFilter?: number, wrapS?: number, wrapT?: number, format?: number, genMipmaps?: boolean, images?: ImageSource[], image?: ImageSource, flipY?: boolean, premultiplyAlpha?: boolean, anisotropy?: number}} TextureUpdateOpts
+ * @typedef {HTMLImageElement | HTMLCanvasElement | HTMLVideoElement} HTMLImageSource
+ * @typedef {HTMLImageSource | ArrayBufferView } ImageSource
+ * @typedef { HTMLVideoElement } HTMLVideoSource
+ * @typedef {{width?: number, height?: number, minFilter?: number, magFilter?: number, mipFilter?: number, wrapS?: number, wrapT?: number, format?: number, genMipmaps?: boolean, images?: ImageSource[], image?: ImageSource, flipY?: boolean, premultiplyAlpha?: boolean, anisotropy?: number ,video: HTMLVideoSource }} TextureUpdateOpts
  * @typedef {import("../gfx/device").default} Device
  */
 
@@ -22,10 +23,21 @@ export default class Texture2D extends Texture {
     let gl = this._device._gl;
     this._target = gl.TEXTURE_2D;
     this._glID = gl.createTexture();
+    this.isRenderring = false;
 
     // always alloc texture in GPU when we create it.
     options.images = options.images || [null];
-    this.update(options);
+    const checkTypeValue = Object.prototype.toString.call(options.image);
+
+    ///　20200115 ビデオデータのテクスチャ変換に伴う追加処理 ///
+    if (checkTypeValue.includes("HTMLVideoElement")) {
+      this._video = options.video;
+      this.isRenderring = true;
+      this._initVideoTexture(gl);
+
+    } else {      
+      this.update(options);
+    }
   }
 
   /**
@@ -325,6 +337,46 @@ export default class Texture2D extends Texture {
     let ext = this._device.ext('EXT_texture_filter_anisotropic');
     if (ext) {
       gl.texParameteri(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, this._anisotropy);
+    }
+  }
+  
+  /**
+   * ビデオデータのテクスチャ変換用の初期化処理.
+   * @method _initVideoTexture
+   * @param {WebGLRenderingContext} gl
+   */
+  _initVideoTexture(gl) {
+
+    // 参考: https://wgld.org/d/webgl/w078.html 
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this._glID);
+
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    this.isRenderring  = true;
+
+  }
+
+  /**
+   * ビデオからテクスチャを変換した時のアップデート処理.
+   * @method _updateVideoTexture
+   * @param {HTMLVideoElement} video 
+   */
+  _updateVideoTexture(video){
+
+    let gl = this._device._gl;
+
+    if (this.isRenderring) {
+      gl.bindTexture(gl.TEXTURE_2D, this._glID);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+
+      return;
     }
   }
 }

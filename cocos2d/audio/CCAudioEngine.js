@@ -139,7 +139,7 @@ var audioEngine = {
      *     var audioID = cc.audioEngine.play(clip, false, 0.5);
      * });
      */
-    play: function (clip, loop, volume/*, profile*/) {
+    play: function (clip, loop, volume, playbackRate = 1/*, profile*/) {
         var path = clip;
         var audio;
         if (typeof clip === 'string') {
@@ -164,6 +164,7 @@ var audioEngine = {
         }
 
         audio.setLoop(loop || false);
+        audio.setPlaybackRate(playbackRate);
         volume = handleVolume(volume);
         audio.setVolume(volume);
         audio.play();

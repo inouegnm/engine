@@ -274,7 +274,8 @@ let _sharedOpts = {
     images: undefined,
     image: undefined,
     flipY: undefined,
-    premultiplyAlpha: undefined
+    premultiplyAlpha: undefined,
+    video: undefined
 };
 function _getSharedOptions () {
     for (var key in _sharedOpts) {
@@ -690,6 +691,69 @@ var Texture2D = cc.Class({
             this._clearImage();
         }
     },
+
+    /**
+     * ビデオデータのテクスチャ変換用の初期化処理メソッド.
+     * @method initWithVideoElement
+     * @param {HTMLVideoElement} element
+     * @example
+     * var img = new Image();
+     * img.src = dataURL;
+     * texture.initWithElement(img);
+     */
+    initWithVideoElement (element) {
+
+        if (!element){
+            console.log("CCTexture2D initWithElement element: is null");
+            return;
+        }
+        this.handleLoadedVideoTexture(element);
+    },
+
+    /**
+     * ビデオテクスチャの制御用処理.
+     * @method handleLoadedTexture
+     * @param {Boolean} [premultiplied]
+     */
+    handleLoadedVideoTexture (element) {
+
+        let opts = _getSharedOptions();
+        opts.image = element;
+        // webgl texture 2d uses images
+        opts.images = [opts.image];
+        opts.width = this.width;
+        opts.height = this.height;
+        opts.genMipmaps = this._genMipmaps;
+        opts.format = this._getGFXPixelFormat(this._format);
+        opts.premultiplyAlpha = this._premultiplyAlpha;
+        opts.flipY = this._flipY;
+        opts.minFilter = FilterIndex[this._minFilter];
+        opts.magFilter = FilterIndex[this._magFilter];
+        opts.wrapS = this._wrapS;
+        opts.wrapT = this._wrapT;
+        opts.video = element;
+        
+        if (!this._texture) {
+            this._texture = new renderer.Texture2D(renderer.device, opts);
+        }
+
+        this._checkPackable();
+        this.loaded = true;
+        this.emit("load");
+
+    },
+
+    /**
+     *  VideoTextureの更新用メソッド.エンジン側の処理を直接呼び出して実行.
+     * ※先にinitWithVideoElementを用いてtexture2DとvideoElementの準備が必要.
+     * @method updateVideoTexture
+     * @param {HTMLVideoElement} element
+     */
+    updateVideoTexture(element){
+        this._texture._updateVideoTexture(element);
+
+    },
+
 
     /**
      * !#en
