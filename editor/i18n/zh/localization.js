@@ -82,6 +82,8 @@ module.exports = {
             'pressed_sprite': '按下状态的按钮背景图资源',
             'hover_sprite': '悬停状态的按钮背景图资源',
             'disabled_sprite': '禁用状态的按钮背景图资源',
+            'normal_material': '正常状态下按钮指定的背景图片所使用的材质',
+            'gray_material': '禁用状态下按钮指定的背景图片所使用的材质',
             'target': '指定 Button 背景节点，Button 状态改变时会修改此节点的 Color 或 Sprite 属性',
             'click_events': '按钮点击事件的列表。先将数量改为1或更多，就可以为每个点击事件设置接受者和处理方法'
         },
@@ -89,6 +91,21 @@ module.exports = {
             'design_resolution': '设计分辨率是游戏在设计时使用的分辨率参考，以像素为单位，通过下面的适配策略，可以在不同分辨率的设备上按照一定的方式对 Canvas 进行整体缩放来适配。',
             'fit_height': '自动缩放 Canvas 使设计分辨率的高度充满设备屏幕的高度',
             'fit_width': '自动缩放 Canvas 使设计分辨率的宽度充满设备屏幕的宽度'
+        },
+        'camera': {
+            'zoomRatio': '摄像机缩放比率',
+            'fov': '决定摄像机视角的宽度，当摄像机处于透视投影模式下这个属性才会生效',
+            'orthoSize': '摄像机在正交投影模式下的视窗大小',
+            'nearClip': '摄像机的近剪裁面',
+            'farClip': '摄像机的远剪裁面',
+            'ortho': '设置摄像机的投影模式是正交还是透视模式',
+            'rect': '决定摄像机绘制在屏幕上哪个位置，值为（0 ~ 1）',
+            'cullingMask': '决定摄像机会渲染场景的哪一部分',
+            'clearFlags': '决定摄像机渲染时会清除哪些状态 \n - Color：清除背景颜色 \n - Depth：清除深度缓冲区 \n - Stencil：清除模板缓冲区',
+            'backgroundColor': '摄像机用于清除屏幕的背景色',
+            'depth': '摄像机深度，用于决定摄像机的渲染顺序',
+            'targetTexture': '摄像机渲染的目标 RenderTexture \n 一般摄像机会直接渲染到屏幕上，但是有一些效果可以使用摄像机渲染到 RenderTexture 上再对 RenderTexture 进行处理来实现',
+            'renderStages': '设置摄像机渲染的阶段',
         },
         'label': {
             'string': 'Label 显示的文本内容字符串',
@@ -99,6 +116,10 @@ module.exports = {
             'line_height': '文字行高，以 point 为单位',
             'overflow': '文字排版模式，包括以下三种：\n 1. CLAMP: 节点约束框之外的文字会被截断 \n 2. SHRINK: 自动根据节点约束框缩小文字\n 3. RESIZE: 根据文本内容自动更新节点的 height 属性.',
             'wrap': '是否允许自动换行',
+            'bold': '是否启用黑体',
+            'italic': '是否启用斜体',
+            'underline': '是否启用下划线',
+            'underline_height': '下划线的高度',
             'font': 'Label 使用的字体资源',
             'system_font': '是否使用系统默认字体，选中此项会将 file 属性置空',
             'cacheMode': '文本缓存模式，包括以下三种：\n 1. NONE : 不做任何缓存，文本内容进行一次绘制 \n 2. BITMAP: 将文本作为静态图像加入动态图集进行批次合并，但是不能频繁动态修改文本内容 \n 3. CHAR: 将文本拆分为字符并且把字符纹理缓存到一张字符图集中进行复用，适用于字符内容重复并且频繁更新的文本内容',
@@ -245,6 +266,7 @@ module.exports = {
             "currentTime": "从哪个时间点开始播放视频",
             "keepAspectRatio": "是否保持视频原有的宽高比",
             "isFullscreen": "是否全屏播放视频",
+            "stayOnBottom": "永远在游戏视图最底层（这个属性只有在 Web 平台上有效果。注意：具体效果无法保证一致，跟各个浏览器是否支持与限制有关）"
         },
         "webview": {
             "url": "指定一个 URL 地址，这个地址以 http 或者 https 开头，请填写一个有效的 URL 地址。"
@@ -273,7 +295,7 @@ module.exports = {
             "premultipliedAlpha": "是否启用贴图预乘",
             "use_tint": "是否启用染色效果",
             "enabled_batch": "是否开启合批",
-            "animation_cache_mode": "REALTIME 模式，实时运算，支持 Spine 所有的功能。\nSHARED_CACHE 模式，将骨骼动画及贴图数据进行缓存并共享，相当于预烘焙骨骼动画。拥有较高性能，但不支持动作融合、动作叠加，只支持动作开始和结束事件。至于内存方面，当创建 N(N>=3) 个相同骨骼、相同动作的动画时，会呈现内存优势。N 值越大，优势越明显。综上 SHARED_CACHE 模式适用于场景动画，特效，副本怪物，NPC 等，能极大提高帧率和降低内存。\nPRIVATE_CACHE 模式，与 SHARED_CACHE 类似，但不共享动画及贴图数据，所以在内存方面没有优势，仅存在性能优势。当想利用缓存模式的高性能，但又存在换装的需求，因此不能共享贴图数据时，那么 PRIVATE_CACHE 就适合你。",
+            "animation_cache_mode": "REALTIME 模式，实时运算，支持 Spine 所有的功能。\nSHARED_CACHE 模式，将骨骼动画及贴图数据进行缓存并共享，相当于预烘焙骨骼动画。拥有较高性能，但不支持动作融合、动作叠加，只支持动作开始和结束事件。至于内存方面，当创建 N(N>=3) 个相同骨骼、相同动作的动画时，会呈现内存优势。N 值越大，优势越明显。综上 SHARED_CACHE 模式适用于场景动画，特效，副本怪物，NPC 等，能极大提高帧率和降低内存。\nPRIVATE_CACHE 模式，与 SHARED_CACHE 类似，但不共享动画及贴图数据，所以在内存方面没有优势，仅存在性能优势。当想利用缓存模式的高性能，但又存在换装的需求，因此不能共享贴图数据时，那么 PRIVATE_CACHE 就适合你。"
         },
         "dragon_bones": {
             "dragon_bones_asset": "骨骼信息数据，拖拽 DragonBones 导出的骨骼动画信息 json 资源到这里来开始使用",
@@ -284,7 +306,7 @@ module.exports = {
             "play_times": "播放默认动画的循环次数\n-1 表示使用配置文件中的默认值\n0 表示无限循环\n>0 表示循环次数",
             "debug_bones": "是否显示 bone 的 debug 信息",
             "enabled_batch": "是否开启合批",
-            "animation_cache_mode": "REALTIME 模式，实时运算，支持 DragonBones 所有的功能。\nSHARED_CACHE 模式，将骨骼动画及贴图数据进行缓存并共享，相当于预烘焙骨骼动画。拥有较高性能，但不支持动作融合、动作叠加、骨骼嵌套，只支持动作开始和结束事件。至于内存方面，当创建 N(N>=3) 个相同骨骼、相同动作的动画时，会呈现内存优势。N 值越大，优势越明显。综上 SHARED_CACHE 模式适用于场景动画，特效，副本怪物，NPC 等，能极大提高帧率和降低内存。\nPRIVATE_CACHE 模式，与 SHARED_CACHE 类似，但不共享动画及贴图数据，所以在内存方面没有优势，仅存在性能优势。当想利用缓存模式的高性能，但又存在换装的需求，因此不能共享贴图数据时，那么 PRIVATE_CACHE 就适合你。",
+            "animation_cache_mode": "REALTIME 模式，实时运算，支持 DragonBones 所有的功能。\nSHARED_CACHE 模式，将骨骼动画及贴图数据进行缓存并共享，相当于预烘焙骨骼动画。拥有较高性能，但不支持动作融合、动作叠加、骨骼嵌套，只支持动作开始和结束事件。至于内存方面，当创建 N(N>=3) 个相同骨骼、相同动作的动画时，会呈现内存优势。N 值越大，优势越明显。综上 SHARED_CACHE 模式适用于场景动画，特效，副本怪物，NPC 等，能极大提高帧率和降低内存。\nPRIVATE_CACHE 模式，与 SHARED_CACHE 类似，但不共享动画及贴图数据，所以在内存方面没有优势，仅存在性能优势。当想利用缓存模式的高性能，但又存在换装的需求，因此不能共享贴图数据时，那么 PRIVATE_CACHE 就适合你。"
         },
         'motionStreak': {
             'fadeTime': "拖尾的渐隐时间,以秒为单位",
@@ -302,6 +324,11 @@ module.exports = {
             'editing': '是否需要编辑此碰撞组件',
             'category': '碰撞组件所属类别',
             'mask': '可以与碰撞组件相碰撞的组件掩码'
+        },
+        'collider3D': {
+            'center': '碰撞器中心点',
+            'size': '包围盒尺寸',
+            'radius': '包围球半径',
         },
         'particle_system': {
             'preview': '在编辑器模式下预览粒子，启用后选中粒子时，粒子将自动播放',
@@ -344,7 +371,7 @@ module.exports = {
             'type': '遮罩类型',
             'spriteFrame': '遮罩所需要的贴图',
             'inverted': '反向遮罩（不支持 Canvas 模式）',
-            'alphaThreshold': 'Alpha阈值，只有当模板的像素的 alpha 大于 alphaThreshold 时，才会绘制内容（不支持 Canvas 模式）',
+            'alphaThreshold': 'Alpha阈值，只有当模板的像素的 alpha 大于等于 alphaThreshold 时，才会绘制内容（不支持 Canvas 模式）',
             'segements': '椭圆遮罩的曲线细分数'
         },
         'physics': {
@@ -418,5 +445,8 @@ module.exports = {
         'skeleton_animation': {
             'search_animation_clips': '搜索骨骼动画',
         },
+        'attach_util': {
+            "generate_attached_node": "生成挂点"
+        }
     }
 };

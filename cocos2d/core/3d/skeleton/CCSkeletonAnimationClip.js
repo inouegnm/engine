@@ -23,28 +23,14 @@
  THE SOFTWARE.
  ****************************************************************************/
 
+import Mat4 from '../../value-types/mat4';
+
 const AnimationClip = require('../../../animation/animation-clip');
 const JointMatrixCurve = require('./CCJointMatrixCurve');
-import mat4 from '../../vmath/mat4';
 
 function maxtrixToArray (matrix) {
     let data = new Float32Array(16);
-    data[0] = matrix.m00;
-    data[1] = matrix.m01;
-    data[2] = matrix.m02;
-    data[3] = matrix.m03;
-    data[4] = matrix.m04;
-    data[5] = matrix.m05;
-    data[6] = matrix.m06;
-    data[7] = matrix.m07;
-    data[8] = matrix.m08;
-    data[9] = matrix.m09;
-    data[10] = matrix.m10;
-    data[11] = matrix.m11;
-    data[12] = matrix.m12;
-    data[13] = matrix.m13;
-    data[14] = matrix.m14;
-    data[15] = matrix.m15;
+    data.set(matrix.m);
     return data;
 }
 
@@ -94,6 +80,10 @@ let SkeletonAnimationClip = cc.Class({
             },
             set () {}
         }
+    },
+
+    statics: {
+        preventDeferredLoadDependents: true,
     },
 
     _init () {
@@ -187,11 +177,11 @@ let SkeletonAnimationClip = cc.Class({
                     }
                 }
 
-                matrix = mat4.create();
-                mat4.fromRTS(matrix, node.quat, node.position, node.scale);
+                matrix = cc.mat4();
+                Mat4.fromRTS(matrix, node.quat, node.position, node.scale);
 
                 if (pm) {
-                    mat4.mul(matrix, pm, matrix);
+                    Mat4.mul(matrix, pm, matrix);
                 }
 
                 if (!props._jointMatrix) {
@@ -200,8 +190,8 @@ let SkeletonAnimationClip = cc.Class({
 
                 let bindWorldMatrix;
                 if (node.uniqueBindPose) {
-                    bindWorldMatrix = mat4.create();
-                    mat4.mul(bindWorldMatrix, matrix, node.uniqueBindPose);
+                    bindWorldMatrix = cc.mat4();
+                    Mat4.mul(bindWorldMatrix, matrix, node.uniqueBindPose);
                 }
 
                 if (!jointMatrixMap[node.path]) {

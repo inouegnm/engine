@@ -31,6 +31,7 @@ let BaseObject = dragonBones.BaseObject,
 */
 
 /**
+ * DragonBones factory
  * @class CCFactory
  * @extends BaseFactory
 */
@@ -58,7 +59,7 @@ var CCFactory = dragonBones.CCFactory = cc.Class({
         let eventManager = new dragonBones.CCArmatureDisplay();
         this._dragonBones = new dragonBones.DragonBones(eventManager);
 
-        if (!CC_JSB && !CC_EDITOR && cc.director._scheduler) {
+        if (!CC_NATIVERENDERER && !CC_EDITOR && cc.director._scheduler) {
             cc.game.on(cc.game.EVENT_RESTART, this.initUpdate, this);
             this.initUpdate();
         }

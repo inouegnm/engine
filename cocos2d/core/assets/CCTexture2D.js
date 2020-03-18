@@ -42,6 +42,7 @@ const CHAR_CODE_1 = 49;    // '1'
 
 var idGenerater = new (require('../platform/id-generater'))('Tex');
 
+
 /**
  * <p>
  * This class allows to easily create OpenGL or Canvas 2D textures from images, text or raw data.                                    <br/>
@@ -269,7 +270,7 @@ let _sharedOpts = {
     wrapS: undefined,
     wrapT: undefined,
     format: undefined,
-    mipmap: undefined,
+    genMipmaps: undefined,
     images: undefined,
     image: undefined,
     flipY: undefined,
@@ -313,7 +314,6 @@ var Texture2D = cc.Class({
             },
             override: true
         },
-        _hasMipmap: false,
         _format: PixelFormat.RGBA8888,
         _premultiplyAlpha: false,
         _flipY: false,
@@ -322,6 +322,46 @@ var Texture2D = cc.Class({
         _mipFilter: Filter.LINEAR,
         _wrapS: WrapMode.CLAMP_TO_EDGE,
         _wrapT: WrapMode.CLAMP_TO_EDGE,
+
+        _genMipmaps: false,
+        /**
+         * !#en Sets whether generate mipmaps for the texture
+         * !#zh 是否为纹理设置生成 mipmaps。
+         * @property {Boolean} genMipmaps
+         * @default false
+         */
+        genMipmaps: {
+            get () {
+                return this._genMipmaps;
+            },
+            set (genMipmaps) {
+                if (this._genMipmaps !== genMipmaps) {
+                    var opts = _getSharedOptions();
+                    opts.genMipmaps = genMipmaps;
+                    this.update(opts);
+                }
+            }
+        },
+
+        _packable: true,
+        /**
+         * !#en 
+         * Sets whether texture can be packed into texture atlas.
+         * If need use texture uv in custom Effect, please sets packable to false.
+         * !#zh 
+         * 设置纹理是否允许参与合图。
+         * 如果需要在自定义 Effect 中使用纹理 UV，需要禁止该选项。
+         * @property {Boolean} packable
+         * @default true
+         */
+        packable: {
+            get () {
+                return this._packable;
+            },
+            set (val) {
+                this._packable = val;
+            }
+        }
     },
 
     statics: {
@@ -400,7 +440,7 @@ var Texture2D = cc.Class({
      * @method update
      * @param {Object} options
      * @param {DOMImageElement} options.image
-     * @param {Boolean} options.mipmap
+     * @param {Boolean} options.genMipmaps
      * @param {PixelFormat} options.format
      * @param {Filter} options.minFilter
      * @param {Filter} options.magFilter
@@ -446,8 +486,8 @@ var Texture2D = cc.Class({
                 this._premultiplyAlpha = options.premultiplyAlpha;
                 updateImg = true;
             }
-            if (options.mipmap !== undefined) {
-                this._hasMipmap = options.mipmap;
+            if (options.genMipmaps !== undefined) {
+                this._genMipmaps = options.genMipmaps;
             }
 
             if (updateImg && this._image) {
@@ -489,7 +529,7 @@ var Texture2D = cc.Class({
         if (!element)
             return;
         this._image = element;
-        if (CC_WECHATGAME || CC_QQPLAY || element.complete || element instanceof HTMLCanvasElement) {
+        if (element.complete || element instanceof HTMLCanvasElement) {
             this.handleLoadedTexture();
         }
         else {
@@ -519,7 +559,7 @@ var Texture2D = cc.Class({
         opts.image = data;
         // webgl texture 2d uses images
         opts.images = [opts.image];
-        opts.hasMipmap = this._hasMipmap;
+        opts.genMipmaps = this._genMipmaps;
         opts.premultiplyAlpha = this._premultiplyAlpha;
         opts.flipY = this._flipY;
         opts.minFilter = FilterIndex[this._minFilter];
@@ -537,6 +577,9 @@ var Texture2D = cc.Class({
         }
         this.width = pixelsWidth;
         this.height = pixelsHeight;
+
+        this._checkPackable();
+
         this.loaded = true;
         this.emit("load");
         return true;
@@ -544,8 +587,12 @@ var Texture2D = cc.Class({
 
     /**
      * !#en
-     * HTMLElement Object getter, available only on web.
-     * !#zh 获取当前贴图对应的 HTML Image 或 Canvas 对象，只在 Web 平台下有效。
+     * HTMLElement Object getter, available only on web.<br/>
+     * Note: texture is packed into texture atlas by default<br/>
+     * you should set texture.packable as false before getting Html element object.
+     * !#zh 获取当前贴图对应的 HTML Image 或 Canvas 对象，只在 Web 平台下有效。<br/>
+     * 注意：<br/>
+     * texture 默认参与动态合图，如果需要获取到正确的 Html 元素对象，需要先设置 texture.packable 为 false
      * @method getHtmlElementObj
      * @return {HTMLImageElement|HTMLCanvasElement}
      */
@@ -565,6 +612,8 @@ var Texture2D = cc.Class({
      * @return {Boolean} inherit from the CCObject
      */
     destroy () {
+        this._packable && cc.dynamicAtlasManager && cc.dynamicAtlasManager.deleteAtlasTexture(this);
+
         this._image = null;
         this._texture && this._texture.destroy();
         // TODO cc.textureUtil ?
@@ -597,17 +646,6 @@ var Texture2D = cc.Class({
 
     /**
      * !#en
-     * Whether or not use mipmap.
-     * !#zh 检查问题在上传 GPU 时是否生成 mipmap。
-     * @method hasMipmap
-     * @return {Boolean}
-     */
-    hasMipmap () {
-        return this._hasMipmap || false;
-    },
-
-    /**
-     * !#en
      * Handler of texture loaded event.
      * Since v2.0, you don't need to invoke this function, it will be invoked automatically after texture loaded.
      * !#zh 贴图加载事件处理器。v2.0 之后你将不在需要手动执行这个函数，它会在贴图加载成功之后自动执行。
@@ -626,7 +664,7 @@ var Texture2D = cc.Class({
         opts.images = [opts.image];
         opts.width = this.width;
         opts.height = this.height;
-        opts.hasMipmap = this._hasMipmap;
+        opts.genMipmaps = this._genMipmaps;
         opts.format = this._getGFXPixelFormat(this._format);
         opts.premultiplyAlpha = this._premultiplyAlpha;
         opts.flipY = this._flipY;
@@ -641,6 +679,8 @@ var Texture2D = cc.Class({
         else {
             this._texture.update(opts);
         }
+
+        this._checkPackable();
 
         //dispatch load event to listener.
         this.loaded = true;
@@ -737,19 +777,26 @@ var Texture2D = cc.Class({
             this.update(opts);
         }
     },
-    
-    /**
-     * !#en
-     * Sets whether generate mipmaps for the texture
-     * !#zh 是否为纹理设置生成 mipmaps。
-     * @method setMipmap
-     * @param {Boolean} mipmap
-     */
-    setMipmap (mipmap) {
-        if (this._hasMipmap !== mipmap) {
-            var opts = _getSharedOptions();
-            opts.mipmap = mipmap;
-            this.update(opts);
+
+    _checkPackable () {
+        let dynamicAtlas = cc.dynamicAtlasManager;
+        if (!dynamicAtlas) return;
+
+        if (this._isCompressed()) {
+            this._packable = false;
+            return;
+        }
+
+        let w = this.width, h = this.height;
+        if (!this._image ||
+            w > dynamicAtlas.maxFrameSize || h > dynamicAtlas.maxFrameSize || 
+            this._getHash() !== dynamicAtlas.Atlas.DEFAULT_HASH) {
+            this._packable = false;
+            return;
+        }
+
+        if (this._image && this._image instanceof HTMLCanvasElement) {
+            this._packable = true;
         }
     },
 
@@ -757,7 +804,7 @@ var Texture2D = cc.Class({
         let opts = _getSharedOptions();
         opts.width = this.width;
         opts.height = this.height;
-        opts.mipmap = this._genMipmap;
+        opts.genMipmaps = this._genMipmaps;
         opts.format = this._format;
         opts.premultiplyAlpha = this._premultiplyAlpha;
         opts.anisotropy = this._anisotropy;
@@ -821,10 +868,8 @@ var Texture2D = cc.Class({
             }
             extId = exts.join('_');
         }
-        let asset = "" + extId + "," + 
-                    this._minFilter + "," + this._magFilter + "," + 
-                    this._wrapS + "," + this._wrapT + "," + 
-                    (this._premultiplyAlpha ? 1 : 0);
+        let asset = `${extId},${this._minFilter},${this._magFilter},${this._wrapS},${this._wrapT},` +
+                    `${this._premultiplyAlpha ? 1 : 0},${this._genMipmaps ? 1 : 0},${this._packable ? 1 : 0}`;
         return asset;
     },
 
@@ -837,18 +882,18 @@ var Texture2D = cc.Class({
         if (extIdStr) {
             let extIds = extIdStr.split('_');
 
-            let extId = 999;
-            let ext = '';
-            let format = this._format;
+            let defaultExt = '';
+            let bestExt = '';
+            let bestIndex = 999;
+            let bestFormat = this._format;
             let SupportTextureFormats = cc.macro.SUPPORT_TEXTURE_FORMATS;
             for (let i = 0; i < extIds.length; i++) {
                 let extFormat = extIds[i].split('@');
                 let tmpExt = extFormat[0];
-                tmpExt = tmpExt.charCodeAt(0) - CHAR_CODE_0;
-                tmpExt = Texture2D.extnames[tmpExt] || extFormat;
+                tmpExt = Texture2D.extnames[tmpExt.charCodeAt(0) - CHAR_CODE_0] || tmpExt;
 
                 let index = SupportTextureFormats.indexOf(tmpExt);
-                if (index !== -1 && index < extId) {
+                if (index !== -1 && index < bestIndex) {
                     
                     let tmpFormat = extFormat[1] ? parseInt(extFormat[1]) : this._format;
 
@@ -862,19 +907,29 @@ var Texture2D = cc.Class({
                     else if ((tmpFormat === PixelFormat.RGB_ETC2 || tmpFormat === PixelFormat.RGBA_ETC2) && !device.ext('WEBGL_compressed_texture_etc')) {
                         continue;
                     }
+                    else if (tmpExt === '.webp' && !cc.sys.capabilities.webp) {
+                        continue;
+                    }
 
-                    extId = index;
-                    ext = tmpExt;
-                    format = tmpFormat;
+                    bestIndex = index;
+                    bestExt = tmpExt;
+                    bestFormat = tmpFormat;
+                }
+                else if (!defaultExt) {
+                    defaultExt = tmpExt;
                 }
             }
 
-            if (ext) {
-                this._setRawAsset(ext);
-                this._format = format;
+            if (bestExt) {
+                this._setRawAsset(bestExt);
+                this._format = bestFormat;
+            }
+            else {
+                this._setRawAsset(defaultExt);
+                cc.warnID(3120, handle.customEnv.url, defaultExt, defaultExt);
             }
         }
-        if (fields.length === 6) {
+        if (fields.length === 8) {
             // decode filters
             this._minFilter = parseInt(fields[1]);
             this._magFilter = parseInt(fields[2]);
@@ -883,6 +938,8 @@ var Texture2D = cc.Class({
             this._wrapT = parseInt(fields[4]);
             // decode premultiply alpha
             this._premultiplyAlpha = fields[5].charCodeAt(0) === CHAR_CODE_1;
+            this._genMipmaps = fields[6].charCodeAt(0) === CHAR_CODE_1;
+            this._packable = fields[7].charCodeAt(0) === CHAR_CODE_1;
         }
     },
 
@@ -890,7 +947,7 @@ var Texture2D = cc.Class({
         if (!this._hashDirty) {
             return this._hash;
         }
-        let hasMipmap = this._hasMipmap ? 1 : 0;
+        let genMipmaps = this._genMipmaps ? 1 : 0;
         let premultiplyAlpha = this._premultiplyAlpha ? 1 : 0;
         let flipY = this._flipY ? 1 : 0;
         let minFilter = this._minFilter === Filter.LINEAR ? 1 : 2;
@@ -900,18 +957,18 @@ var Texture2D = cc.Class({
         let pixelFormat = this._format;
         let image = this._image;
         if (CC_JSB && image) {
-            if (image._glFormat !== GL_RGBA)
+            if (image._glFormat && image._glFormat !== GL_RGBA)
                 pixelFormat = 0;
-            premultiplyAlpha = image._premultiplyAlpha;
+            premultiplyAlpha = image._premultiplyAlpha ? 1 : 0;
         }
 
-        this._hash = Number(`${minFilter}${magFilter}${pixelFormat}${wrapS}${wrapT}${hasMipmap}${premultiplyAlpha}${flipY}`);
+        this._hash = Number(`${minFilter}${magFilter}${pixelFormat}${wrapS}${wrapT}${genMipmaps}${premultiplyAlpha}${flipY}`);
         this._hashDirty = false;
         return this._hash;
     },
 
     _isCompressed () {
-        return this._texture && this._texture._compressed;
+        return this._format < PixelFormat.A8 || this._format > PixelFormat.RGBA32F;
     },
     
     _clearImage () {

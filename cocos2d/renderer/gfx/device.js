@@ -565,6 +565,13 @@ function _attach(gl, location, attachment, face = 0) {
 
 export default class Device {
   /**
+   * @property caps
+   */
+  get caps() {
+    return this._caps;
+  }
+
+  /**
    * @param {HTMLElement} canvasEL
    * @param {object} opts
    */
@@ -620,6 +627,7 @@ export default class Device {
       drawcalls: 0,
     };
 
+    // https://developer.mozilla.org/zh-CN/docs/Web/API/WebGL_API/Using_Extensions
     this._initExtensions([
       'EXT_texture_filter_anisotropic',
       'EXT_shader_texture_lod',
@@ -689,6 +697,7 @@ export default class Device {
     this._caps.maxFragUniforms = gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS);
     this._caps.maxTextureUnits = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS);
     this._caps.maxVertexAttribs = gl.getParameter(gl.MAX_VERTEX_ATTRIBS);
+    this._caps.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
 
     this._caps.maxDrawBuffers = extDrawBuffers ? gl.getParameter(extDrawBuffers.MAX_DRAW_BUFFERS_WEBGL) : 1;
     this._caps.maxColorAttachments = extDrawBuffers ? gl.getParameter(extDrawBuffers.MAX_COLOR_ATTACHMENTS_WEBGL) : 1;
@@ -783,7 +792,7 @@ export default class Device {
     this._framebuffer = fb;
     const gl = this._gl;
 
-    if (fb === null) {
+    if (!fb) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       return;
     }
@@ -1176,6 +1185,10 @@ export default class Device {
     for (let i = 0; i < len; ++i) {
       let slot = slots[i];
       this._next.textureUnits[slot] = textures[i];
+
+      if (this._next.maxTextureSlot < slot) {
+        this._next.maxTextureSlot = slot;
+      }
     }
     this.setUniform(name, slots);
   }
@@ -1266,6 +1279,20 @@ export default class Device {
   }
 
   /**
+   * @method resetDrawCalls
+   */
+  resetDrawCalls () {
+    this._stats.drawcalls = 0;
+  }
+  
+  /**
+   * @method getDrawCalls
+   */
+  getDrawCalls () {
+    return this._stats.drawcalls;
+  }
+
+  /**
    * @method draw
    * @param {Number} base
    * @param {Number} count
@@ -1351,6 +1378,9 @@ export default class Device {
           count
         );
       }
+
+      // update stats
+      this._stats.drawcalls++;
     }
 
     // TODO: autogen mipmap for color buffer
@@ -1358,9 +1388,6 @@ export default class Device {
     //   gl.bindTexture(this._framebuffer.colors[i]._target, colors[i]._glID);
     //   gl.generateMipmap(this._framebuffer.colors[i]._target);
     // }
-
-    // update stats
-    this._stats.drawcalls += 1;
 
     // reset states
     cur.set(next);

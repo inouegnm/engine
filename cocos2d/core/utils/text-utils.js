@@ -24,11 +24,108 @@
  THE SOFTWARE.
  ****************************************************************************/
 
+import js from '../platform/js'
+
 // Draw text the textBaseline ratio (Can adjust the appropriate baseline ratio based on the platform)
 let _BASELINE_RATIO = 0.26;
 if (CC_RUNTIME) {
-    _BASELINE_RATIO = -0.2;
+    _BASELINE_RATIO = -0.05;
 }
+
+const MAX_CACHE_SIZE = 100;
+
+let pool = new js.Pool(2);
+pool.get = function () {
+    var node = this._get() || {
+        key: null,
+        value: null,
+        prev: null,
+        next: null
+    };
+
+    return node;
+};
+
+function LRUCache(size) {
+    this.count = 0;
+    this.limit = size;
+    this.datas = {};
+    this.head = null;
+    this.tail = null;
+}
+
+LRUCache.prototype.moveToHead = function (node) {
+    node.next = this.head;
+    node.prev = null;
+    if (this.head !== null) 
+        this.head.prev = node;
+    this.head = node;
+    if (this.tail === null) 
+        this.tail = node;
+    this.count++;
+    this.datas[node.key] = node;
+}
+
+LRUCache.prototype.put = function (key, value) {
+    const node = pool.get();
+    node.key = key;
+    node.value = value;
+    
+    if (this.count >= this.limit) {
+        let discard = this.tail;
+        delete this.datas[discard.key];
+        this.count--;
+        this.tail = discard.prev;
+        this.tail.next = null;
+        discard.prev = null;
+        discard.next = null;
+        pool.put(discard);
+    }
+    this.moveToHead(node);
+}
+
+LRUCache.prototype.remove = function (node) {
+    if (node.prev !== null) {
+        node.prev.next = node.next;
+    } else {
+        this.head = node.next;
+    }
+    if (node.next !== null) {
+        node.next.prev = node.prev;
+    } else {
+        this.tail = node.prev;
+    }
+    delete this.datas[node.key];
+    this.count--;
+}
+
+LRUCache.prototype.get = function (key) {
+    const node = this.datas[key];
+    if (node) {
+        this.remove(node);
+        this.moveToHead(node);
+        return node.value;
+    }
+    return null;
+}
+
+LRUCache.prototype.clear = function () {
+    this.count = 0;
+    this.datas = {};
+    this.head = null;
+    this.tail = null;
+}
+
+LRUCache.prototype.has = function (key) {
+    return !!this.datas[key];
+}
+
+LRUCache.prototype.delete = function (key) {
+    const node = this.datas[key];
+    this.remove(node);
+}
+
+let measureCache = new LRUCache(MAX_CACHE_SIZE);
 
 var textUtils = {
 
@@ -58,9 +155,19 @@ var textUtils = {
         return ((ch >= 9 && ch <= 13) || ch === 32 || ch === 133 || ch === 160 || ch === 5760 || (ch >= 8192 && ch <= 8202) || ch === 8232 || ch === 8233 || ch === 8239 || ch === 8287 || ch === 12288);
     },
 
-    safeMeasureText: function (ctx, string) {
-        var metric = ctx.measureText(string);
-        return metric && metric.width || 0;
+    safeMeasureText: function (ctx, string, desc) {
+        let font = desc || ctx.font;
+        let key = font + "\uD83C\uDFAE" + string;
+        let cache = measureCache.get(key);
+        if (cache !== null) {
+            return cache;
+        }
+
+        let metric = ctx.measureText(string);
+        let width = metric && metric.width || 0;
+        measureCache.put(key, width);
+
+        return width;
     },
 
     fragmentText: function (stringToken, allWidth, maxWidth, measureText) {
@@ -76,7 +183,7 @@ var textUtils = {
         while (allWidth > maxWidth && text.length > 1) {
 
             var fuzzyLen = text.length * ( maxWidth / allWidth ) | 0;
-            var tmpText = text.substr(fuzzyLen);
+            var tmpText = text.substring(fuzzyLen);
             var width = allWidth - measureText(tmpText);
             var sLine = tmpText;
             var pushNum = 0;
@@ -88,7 +195,7 @@ var textUtils = {
             while (width > maxWidth && checkWhile++ < checkCount) {
                 fuzzyLen *= maxWidth / width;
                 fuzzyLen = fuzzyLen | 0;
-                tmpText = text.substr(fuzzyLen);
+                tmpText = text.substring(fuzzyLen);
                 width = allWidth - measureText(tmpText);
             }
 
@@ -103,17 +210,17 @@ var textUtils = {
                 }
 
                 fuzzyLen = fuzzyLen + pushNum;
-                tmpText = text.substr(fuzzyLen);
+                tmpText = text.substring(fuzzyLen);
                 width = allWidth - measureText(tmpText);
             }
 
             fuzzyLen -= pushNum;
             if (fuzzyLen === 0) {
                 fuzzyLen = 1;
-                sLine = sLine.substr(1);
+                sLine = sLine.substring(1);
             }
 
-            var sText = text.substr(0, fuzzyLen), result;
+            var sText = text.substring(0, 0 + fuzzyLen), result;
 
             //symbol in the first
             if (this.label_wrapinspection) {
@@ -122,8 +229,8 @@ var textUtils = {
                     fuzzyLen -= result ? result[0].length : 0;
                     if (fuzzyLen === 0) fuzzyLen = 1;
 
-                    sLine = text.substr(fuzzyLen);
-                    sText = text.substr(0, fuzzyLen);
+                    sLine = text.substring(fuzzyLen);
+                    sText = text.substring(0, 0 + fuzzyLen);
                 }
             }
 
@@ -133,8 +240,8 @@ var textUtils = {
                 result = this.label_lastEmoji.exec(sText);
                 if (result && sText !== result[0]) {
                     fuzzyLen -= result[0].length;
-                    sLine = text.substr(fuzzyLen);
-                    sText = text.substr(0, fuzzyLen);
+                    sLine = text.substring(fuzzyLen);
+                    sText = text.substring(0, 0 + fuzzyLen);
                 }
             }
 
@@ -143,8 +250,8 @@ var textUtils = {
                 result = this.label_lastEnglish.exec(sText);
                 if (result && sText !== result[0]) {
                     fuzzyLen -= result[0].length;
-                    sLine = text.substr(fuzzyLen);
-                    sText = text.substr(0, fuzzyLen);
+                    sLine = text.substring(fuzzyLen);
+                    sText = text.substring(0, 0 + fuzzyLen);
                 }
             }
 
@@ -153,7 +260,7 @@ var textUtils = {
                 wrappedWords.push(sText);
             }
             else {
-                sText = sText.trim();
+                sText = sText.trimLeft();
                 if (sText.length > 0) {
                     wrappedWords.push(sText);
                 }
@@ -166,7 +273,7 @@ var textUtils = {
             wrappedWords.push(text);
         }
         else {
-            text = text.trim();
+            text = text.trimLeft();
             if (text.length > 0) {
                 wrappedWords.push(text);
             }
@@ -175,4 +282,4 @@ var textUtils = {
     },
 };
 
-module.exports = textUtils;
+cc.textUtils = module.exports = textUtils;

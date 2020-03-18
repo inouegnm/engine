@@ -27,9 +27,11 @@ const RenderComponent = require('../core/components/CCRenderComponent');
 const Material = require('../core/assets/material/CCMaterial');
 const RenderFlow = require('../core/renderer/render-flow');
 
-import { mat4, vec2 } from '../core/vmath';
-let _mat4_temp = mat4.create();
-let _vec2_temp = vec2.create();
+import { Mat4, Vec2 } from '../core/value-types';
+import MaterialVariant from '../core/assets/material/material-variant';
+let _mat4_temp = cc.mat4();
+let _vec2_temp = cc.v2();
+let _vec2_temp2 = cc.v2();
 let _tempRowCol = {row:0, col:0};
 
 let TiledUserNodeData = cc.Class({
@@ -40,7 +42,6 @@ let TiledUserNodeData = cc.Class({
         this._index = -1;
         this._row = -1;
         this._col = -1;
-        this._dataId = -1;
         this._tiledLayer = null;
     }
 
@@ -66,7 +67,6 @@ let TiledLayer = cc.Class({
     ctor () {
         this._userNodeGrid = {};// [row][col] = {count: 0, nodesList: []};
         this._userNodeMap = {};// [id] = node;
-        this._userDataId = 1;
         this._userNodeDirty = false;
 
         // store the layer tiles node, index is caculated by 'x + width * y', format likes '[0]=tileNode0,[1]=tileNode1, ...'
@@ -104,6 +104,7 @@ let TiledLayer = cc.Class({
 
         this._layerName = '';
         this._layerOrientation = null;
+
         // store all layer gid corresponding texture info, index is gid, format likes '[gid0]=tex-info,[gid1]=tex-info, ...'
         this._texGrids = null;
         // store all tileset texture, index is tileset index, format likes '[0]=texture0, [1]=texture1, ...'
@@ -147,34 +148,31 @@ let TiledLayer = cc.Class({
      * !#zh 添加用户节点。
      * @method addUserNode
      * @param {cc.Node} node
+     * @return {Boolean}
      */
     addUserNode (node) {
         let dataComp = node.getComponent(TiledUserNodeData);
         if (dataComp) {
-            cc.warn("CCTiledLayer:insertUserNode node has insert");
-            return;
+            cc.warn("CCTiledLayer:addUserNode node has been added");
+            return false;
         }
 
         dataComp = node.addComponent(TiledUserNodeData);
         node.parent = this.node;
         node._renderFlag |= RenderFlow.FLAG_BREAK_FLOW;
-        this._userNodeMap[this._userDataId] = dataComp;
+        this._userNodeMap[node._id] = dataComp;
 
-        dataComp._dataId = this._userDataId;
         dataComp._row = -1;
         dataComp._col = -1;
         dataComp._tiledLayer = this;
         
-        this._positionToRowCol(node.x, node.y, _tempRowCol);
+        this._nodeLocalPosToLayerPos(node, _vec2_temp);
+        this._positionToRowCol(_vec2_temp.x, _vec2_temp.y, _tempRowCol);
         this._addUserNodeToGrid(dataComp, _tempRowCol);
         this._updateCullingOffsetByUserNode(node);
         node.on(cc.Node.EventType.POSITION_CHANGED, this._userNodePosChange, dataComp);
         node.on(cc.Node.EventType.SIZE_CHANGED, this._userNodeSizeChange, dataComp);
-        this._userDataId++;
-        // user data Id is too large
-        if (this._userDataId >= Number.MAX_SAFE_INTEGER) {
-            this._updateAllUserNode();
-        }
+        return true;
     },
 
     /**
@@ -182,20 +180,23 @@ let TiledLayer = cc.Class({
      * !#zh 移除用户节点。
      * @method removeUserNode
      * @param {cc.Node} node
+     * @return {Boolean}
      */
     removeUserNode (node) {
         let dataComp = node.getComponent(TiledUserNodeData);
         if (!dataComp) {
             cc.warn("CCTiledLayer:removeUserNode node is not exist");
-            return;
+            return false;
         }
         node.off(cc.Node.EventType.POSITION_CHANGED, this._userNodePosChange, dataComp);
         node.off(cc.Node.EventType.SIZE_CHANGED, this._userNodeSizeChange, dataComp);
         this._removeUserNodeFromGrid(dataComp);
-        delete this._userNodeMap[dataComp._dataId];
-        node.removeComponent(dataComp);
+        delete this._userNodeMap[node._id];
+        node._removeComponent(dataComp);
+        dataComp.destroy();
         node.removeFromParent(true);
         node._renderFlag &= ~RenderFlow.FLAG_BREAK_FLOW;
+        return true;
     },
 
     /**
@@ -207,6 +208,12 @@ let TiledLayer = cc.Class({
     destroyUserNode (node) {
         this.removeUserNode(node);
         node.destroy();
+    },
+
+    // acording layer anchor point to calculate node layer pos
+    _nodeLocalPosToLayerPos (nodePos, out) {
+        out.x = nodePos.x + this._leftDownToCenterX;
+        out.y = nodePos.y + this._leftDownToCenterY;
     },
 
     _getNodesByRowCol (row, col) {
@@ -222,17 +229,11 @@ let TiledLayer = cc.Class({
     },
 
     _updateAllUserNode () {
-        let oldUserNodeMap = this._userNodeMap;
         this._userNodeGrid = {};
-        let newUserNodeMap = this._userNodeMap = {};
-        this._userDataId = 1;
-        for (let dataId in oldUserNodeMap) {
-            let dataComp = oldUserNodeMap[dataId];
-            dataComp._dataId = this._userDataId;
-            this._userDataId ++;
-            newUserNodeMap[dataComp._dataId] = dataComp;
-
-            this._positionToRowCol(dataComp.node.x, dataComp.node.y, _tempRowCol);
+        for (let dataId in this._userNodeMap) {
+            let dataComp = this._userNodeMap[dataId];
+            this._nodeLocalPosToLayerPos(dataComp.node, _vec2_temp);
+            this._positionToRowCol(_vec2_temp.x, _vec2_temp.y, _tempRowCol);
             this._addUserNodeToGrid(dataComp, _tempRowCol);
             this._updateCullingOffsetByUserNode(dataComp.node);
         }
@@ -264,7 +265,9 @@ let TiledLayer = cc.Class({
         let dataComp = this;
         let node = dataComp.node;
         let self = dataComp._tiledLayer;
-        self._positionToRowCol(node.x, node.y, _tempRowCol);
+        self._nodeLocalPosToLayerPos(node, _vec2_temp);
+        self._positionToRowCol(_vec2_temp.x, _vec2_temp.y, _tempRowCol);
+        self._limitInLayer(_tempRowCol);
         // users pos not change
         if (_tempRowCol.row === dataComp._row && _tempRowCol.col === dataComp._col) return;
 
@@ -295,27 +298,26 @@ let TiledLayer = cc.Class({
         this._userNodeDirty = true;
     },
 
-    _isInLayer (row, col) {
-        return row >= 0 && col >= 0 && row <= this._rightTop.row && col <= this._rightTop.col;
+    _limitInLayer (rowCol) {
+        let row = rowCol.row;
+        let col = rowCol.col;
+        if (row < 0) rowCol.row = 0;
+        if (row > this._rightTop.row) rowCol.row = this._rightTop.row;
+        if (col < 0) rowCol.col = 0;
+        if (col > this._rightTop.col) rowCol.col = this._rightTop.col;
     },
 
     _addUserNodeToGrid (dataComp, tempRowCol) {
         let row = tempRowCol.row;
         let col = tempRowCol.col;
-        if (this._isInLayer(row, col)) {
-            let rowData = this._userNodeGrid[row] = this._userNodeGrid[row] || {count : 0};
-            let colData = rowData[col] = rowData[col] || {count : 0, list: []};
-            dataComp._row = row;
-            dataComp._col = col;
-            dataComp._index = colData.list.length;
-            rowData.count++;
-            colData.count++;
-            colData.list.push(dataComp);
-        } else {
-            dataComp._row = -1;
-            dataComp._col = -1;
-            dataComp._index = -1;
-        }
+        let rowData = this._userNodeGrid[row] = this._userNodeGrid[row] || {count : 0};
+        let colData = rowData[col] = rowData[col] || {count : 0, list: []};
+        dataComp._row = row;
+        dataComp._col = col;
+        dataComp._index = colData.list.length;
+        rowData.count++;
+        colData.count++;
+        colData.list.push(dataComp);
         this._userNodeDirty = true;
     },
 
@@ -334,12 +336,14 @@ let TiledLayer = cc.Class({
     },
 
     onDisable () {
+        this._super();
         this.node.off(cc.Node.EventType.ANCHOR_CHANGED, this._syncAnchorPoint, this);
     },
 
     _syncAnchorPoint () {
-        this._leftDownToCenterX = this.node.width * this.node.anchorX;
-        this._leftDownToCenterY = this.node.height * this.node.anchorY;
+        let node = this.node;
+        this._leftDownToCenterX = node.width * node.anchorX * node.scaleX;
+        this._leftDownToCenterY = node.height * node.anchorY * node.scaleY;
         this._cullingDirty = true;
     },
 
@@ -440,16 +444,36 @@ let TiledLayer = cc.Class({
     },
 
     _positionForIsoAt (x, y) {
+        let offsetX = 0, offsetY = 0;
+        let index = Math.floor(x) + Math.floor(y) * this._layerSize.width;
+        let gid = this._tiles[index];
+        if (gid) {
+            let tileset = this._texGrids[gid].tileset;
+            let offset = tileset.tileOffset;
+            offsetX = offset.x;
+            offsetY = offset.y;
+        }
+
         return cc.v2(
-            this._mapTileSize.width / 2 * ( this._layerSize.width + x - y - 1),
-            this._mapTileSize.height / 2 * (( this._layerSize.height * 2 - x - y) - 2)
+            this._mapTileSize.width * 0.5 * (this._layerSize.height + x - y - 1) + offsetX,
+            this._mapTileSize.height * 0.5 * (this._layerSize.width - x + this._layerSize.height - y - 2) - offsetY
         );
     },
 
     _positionForOrthoAt (x, y) {
+        let offsetX = 0, offsetY = 0;
+        let index = Math.floor(x) + Math.floor(y) * this._layerSize.width;
+        let gid = this._tiles[index];
+        if (gid) {
+            let tileset = this._texGrids[gid].tileset;
+            let offset = tileset.tileOffset;
+            offsetX = offset.x;
+            offsetY = offset.y;
+        }
+
         return cc.v2(
-            x * this._mapTileSize.width,
-            (this._layerSize.height - y - 1) * this._mapTileSize.height
+            x * this._mapTileSize.width + offsetX,
+            (this._layerSize.height - y - 1) * this._mapTileSize.height - offsetY
         );
     },
 
@@ -463,32 +487,26 @@ let TiledLayer = cc.Class({
         let tileset = this._texGrids[gid].tileset;
         let offset = tileset.tileOffset;
 
-        let centerWidth = this.node.width / 2;
-        let centerHeight = this.node.height / 2;
         let odd_even = (this._staggerIndex === cc.TiledMap.StaggerIndex.STAGGERINDEX_ODD) ? 1 : -1;
         let x = 0, y = 0;
         let diffX = 0;
-        let diffX1 = 0;
         let diffY = 0;
-        let diffY1 = 0;
         switch (this._staggerAxis) {
             case cc.TiledMap.StaggerAxis.STAGGERAXIS_Y:
                 diffX = 0;
-                diffX1 = (this._staggerIndex === cc.TiledMap.StaggerIndex.STAGGERINDEX_ODD) ? 0 : tileWidth / 2;
                 if (row % 2 === 1) {
                     diffX = tileWidth / 2 * odd_even;
                 }
-                x = col * tileWidth + diffX + diffX1 + offset.x - centerWidth;
-                y = (rows - row - 1) * (tileHeight - (tileHeight - this._hexSideLength) / 2) - offset.y - centerHeight;
+                x = col * tileWidth + diffX + offset.x;
+                y = (rows - row - 1) * (tileHeight - (tileHeight - this._hexSideLength) / 2) - offset.y;
                 break;
             case cc.TiledMap.StaggerAxis.STAGGERAXIS_X:
                 diffY = 0;
-                diffY1 = (this._staggerIndex === cc.TiledMap.StaggerIndex.STAGGERINDEX_ODD) ? tileHeight / 2 : 0;
                 if (col % 2 === 1) {
                     diffY = tileHeight / 2 * -odd_even;
                 }
-                x = col * (tileWidth - (tileWidth - this._hexSideLength) / 2) + offset.x - centerWidth;
-                y = (rows - row - 1) * tileHeight + diffY + diffY1 - offset.y - centerHeight;
+                x = col * (tileWidth - (tileWidth - this._hexSideLength) / 2) + offset.x;
+                y = (rows - row - 1) * tileHeight + diffY - offset.y;
                 break;
         }
         return cc.v2(x, y);
@@ -556,6 +574,7 @@ let TiledLayer = cc.Class({
         let idx = 0 | (pos.x + pos.y * this._layerSize.width);
         if (idx < this._tiles.length) {
             this._tiles[idx] = gid;
+            this._cullingDirty = true;
         }
     },
 
@@ -747,15 +766,19 @@ let TiledLayer = cc.Class({
             this.enableCulling(false);
         } else if (this._enableCulling) {
             this.node._updateWorldMatrix();
-            mat4.invert(_mat4_temp, this.node._worldMatrix);
+            Mat4.invert(_mat4_temp, this.node._worldMatrix);
             let rect = cc.visibleRect;
             let camera = cc.Camera.findCamera(this.node);
             if (camera) {
                 _vec2_temp.x = 0;
                 _vec2_temp.y = 0;
-                camera.getCameraToWorldPoint(_vec2_temp, _vec2_temp);
-                vec2.transformMat4(_vec2_temp, _vec2_temp, _mat4_temp);
-                this._updateViewPort(_vec2_temp.x, _vec2_temp.y, rect.width, rect.height);
+                _vec2_temp2.x = _vec2_temp.x + rect.width;
+                _vec2_temp2.y = _vec2_temp.y + rect.height;
+                camera.getScreenToWorldPoint(_vec2_temp, _vec2_temp);
+                camera.getScreenToWorldPoint(_vec2_temp2, _vec2_temp2);
+                Vec2.transformMat4(_vec2_temp, _vec2_temp, _mat4_temp);
+                Vec2.transformMat4(_vec2_temp2, _vec2_temp2, _mat4_temp);
+                this._updateViewPort(_vec2_temp.x, _vec2_temp.y, _vec2_temp2.x - _vec2_temp.x, _vec2_temp2.y - _vec2_temp.y);
             }
         }
     },
@@ -777,7 +800,7 @@ let TiledLayer = cc.Class({
      * !#en properties from the layer. They can be added using Tiled.
      * !#zh 获取 layer 的属性，可以使用 Tiled 编辑器添加属性。
      * @method getProperties
-     * @return {Array}
+     * @return {Object}
      * @example
      * let properties = tiledLayer.getProperties();
      * cc.log("Properties: " + properties);
@@ -1014,6 +1037,7 @@ let TiledLayer = cc.Class({
 
         let index = Math.floor(x) + Math.floor(y) * this._layerSize.width;
         this._tiledTiles[index] = tiledTile;
+        this._cullingDirty = true;
 
         if (tiledTile) {
             this._hasTiledNodeGrid = true;
@@ -1189,6 +1213,7 @@ let TiledLayer = cc.Class({
 
     _init (layerInfo, mapInfo, tilesets, textures, texGrids) {
         
+        this._cullingDirty = true;
         this._layerInfo = layerInfo;
         this._mapInfo = mapInfo;
 
@@ -1219,33 +1244,36 @@ let TiledLayer = cc.Class({
         this._layerOrientation = mapInfo.orientation;
         this._mapTileSize = mapInfo.getTileSize();
 
+        let maptw = this._mapTileSize.width;
+        let mapth = this._mapTileSize.height;
+        let layerW = this._layerSize.width;
+        let layerH = this._layerSize.height;
+
         if (this._layerOrientation === cc.TiledMap.Orientation.HEX) {
             // handle hex map
             const TiledMap = cc.TiledMap;
             const StaggerAxis = TiledMap.StaggerAxis;
-            const StaggerIndex = TiledMap.StaggerIndex;
-
-            let maptw = this._mapTileSize.width;
-            let mapth = this._mapTileSize.height;
+            const StaggerIndex = TiledMap.StaggerIndex;            
             let width = 0, height = 0;
 
             this._odd_even = (this._staggerIndex === StaggerIndex.STAGGERINDEX_ODD) ? 1 : -1;
-
             if (this._staggerAxis === StaggerAxis.STAGGERAXIS_X) {
                 this._diffX1 = (maptw - this._hexSideLength) / 2;
                 this._diffY1 = 0;
-                height = mapth * (this._layerSize.height + 0.5);
-                width = (maptw + this._hexSideLength) * Math.floor(this._layerSize.width / 2) + maptw * (this._layerSize.width % 2);
+                height = mapth * (layerH + 0.5);
+                width = (maptw + this._hexSideLength) * Math.floor(layerW / 2) + maptw * (layerW % 2);
             } else {
                 this._diffX1 = 0;
                 this._diffY1 = (mapth - this._hexSideLength) / 2;
-                width = maptw * (this._layerSize.width + 0.5);
-                height = (mapth + this._hexSideLength) * Math.floor(this._layerSize.height / 2) + mapth * (this._layerSize.height % 2);
+                width = maptw * (layerW + 0.5);
+                height = (mapth + this._hexSideLength) * Math.floor(layerH / 2) + mapth * (layerH % 2);
             }
             this.node.setContentSize(width, height);
+        } else if (this._layerOrientation === cc.TiledMap.Orientation.ISO) {
+            let wh = layerW + layerH;
+            this.node.setContentSize(maptw * 0.5 * wh, mapth * 0.5 * wh);
         } else {
-            this.node.setContentSize(this._layerSize.width * this._mapTileSize.width,
-                this._layerSize.height * this._mapTileSize.height);
+            this.node.setContentSize(layerW * maptw, layerH * mapth);
         }
 
         // offset (after layer orientation is set);
@@ -1272,31 +1300,28 @@ let TiledLayer = cc.Class({
 
         let texIdMatIdx = this._texIdToMatIndex = {};
         let textures = this._textures;
+        let matLen = tilesetIndexArr.length;
 
-        for (let i = 0; i < tilesetIndexArr.length; i++) {
+        for (let i = 0; i < matLen; i++) {
             let tilesetIdx = tilesetIndexArr[i];
             let texture = textures[tilesetIdx];
 
-            let material = this.sharedMaterials[i];
+            let material = this._materials[i];
             if (!material) {
-                material = Material.getInstantiatedBuiltinMaterial('2d-sprite', this);
+                material = Material.getBuiltinMaterial('2d-sprite');
             }
-            else {
-                material = Material.getInstantiatedMaterial(material, this);
-            }
+            material = MaterialVariant.create(material, this);
 
-            material.define('USE_TEXTURE', true);
-            material.define('_USE_MODEL', true);
+            material.define('CC_USE_MODEL', true);
             material.setProperty('texture', texture);
-            this.setMaterial(i, material);
 
+            this._materials[i] = material;
+            
             texIdMatIdx[tilesetIdx] = i;
         }
-
-        this.markForUpdateRenderData(true);
-        this.markForRender(false);
-        this.markForCustomIARender(true);
-    },
+        this._materials.length = matLen;
+        this.markForRender(true);
+    }
 });
 
 cc.TiledLayer = module.exports = TiledLayer;

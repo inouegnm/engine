@@ -1,4 +1,4 @@
-﻿/****************************************************************************
+/****************************************************************************
  Copyright (c) 2013-2016 Chukong Technologies Inc.
  Copyright (c) 2017-2018 Xiamen Yaji Software Co., Ltd.
 
@@ -54,6 +54,7 @@ var fastRemove = js.array.fastRemove;
  * 但是其他对象也可以是事件目标。<br/>
  *
  * @class EventTarget
+ * @extends CallbacksInvoker
  */
 function EventTarget () {
     CallbacksInvoker.call(this);
@@ -105,13 +106,8 @@ proto.on = function (type, callback, target, once) {
     if ( !this.hasEventListener(type, callback, target) ) {
         this.__on(type, callback, target, once);
 
-        if (target) {
-            if (target.__eventTargets) {
-                target.__eventTargets.push(this);
-            }
-            else if (target.node && target.node.__eventTargets) {
-                target.node.__eventTargets.push(this);
-            }
+        if (target && target.__eventTargets) {
+            target.__eventTargets.push(this);
         }
     }
     return callback;
@@ -141,18 +137,22 @@ proto.on = function (type, callback, target, once) {
 proto.__off = proto.off;
 proto.off = function (type, callback, target) {
     if (!callback) {
+        let list = this._callbackTable[type];
+        if (!list) return;
+        let infos = list.callbackInfos;
+        for (let i = 0; i < infos.length; ++i) {
+            let target = infos[i] && infos[i].target;
+            if (target && target.__eventTargets) {
+                fastRemove(target.__eventTargets, this);
+            }
+        }
         this.removeAll(type);
     }
     else {
         this.__off(type, callback, target);
 
-        if (target) {
-            if (target.__eventTargets) {
-                fastRemove(target.__eventTargets, this);
-            }
-            else if (target.node && target.node.__eventTargets) {
-                fastRemove(target.node.__eventTargets, this);
-            }
+        if (target && target.__eventTargets) {
+            fastRemove(target.__eventTargets, this);
         }
     }
 };
@@ -168,7 +168,13 @@ proto.off = function (type, callback, target) {
  * @method targetOff
  * @param {Object} target - The target to be searched for all related listeners
  */
-proto.targetOff = proto.removeAll;
+proto.targetOff = function (target) {
+    this.removeAll(target);
+    
+    if (target && target.__eventTargets) {
+        fastRemove(target.__eventTargets, this);
+    }
+};
 
 /**
  * !#en

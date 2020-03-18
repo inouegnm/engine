@@ -27,10 +27,8 @@
 const misc = require('../utils/misc');
 const NodeEvent = require('../CCNode').EventType;
 const RenderComponent = require('./CCRenderComponent');
-const RenderFlow = require('../renderer/render-flow');
 const BlendFunc = require('../utils/blend-func');
 
-const Material = require('../assets/material/CCMaterial');
 
 /**
  * !#en Enum for sprite type.
@@ -147,6 +145,7 @@ var State = cc.Enum({
  * !#zh 该组件用于在场景中渲染精灵。
  * @class Sprite
  * @extends RenderComponent
+ * @uses BlendFunc
  * @example
  *  // Create a new node and add sprite components.
  *  var node = new cc.Node("New Sprite");
@@ -194,10 +193,10 @@ var Sprite = cc.Class({
          * sprite.spriteFrame = newSpriteFrame;
          */
         spriteFrame: {
-            get: function () {
+            get () {
                 return this._spriteFrame;
             },
-            set: function (value, force) {
+            set (value, force) {
                 var lastSprite = this._spriteFrame;
                 if (CC_EDITOR) {
                     if (!force && ((lastSprite && lastSprite._uuid) === (value && value._uuid))) {
@@ -210,8 +209,6 @@ var Sprite = cc.Class({
                     }
                 }
                 this._spriteFrame = value;
-                // render & update render data flag will be triggered while applying new sprite frame
-                this.markForUpdateRenderData(false);
                 this._applySpriteFrame(lastSprite);
                 if (CC_EDITOR) {
                     this.node.emit('spriteframe-changed', this);
@@ -229,15 +226,14 @@ var Sprite = cc.Class({
          * sprite.type = cc.Sprite.Type.SIMPLE;
          */
         type: {
-            get: function () {
+            get () {
                 return this._type;
             },
-            set: function (value) {
+            set (value) {
                 if (this._type !== value) {
-                    this.destroyRenderData(this._renderData);
-                    this._renderData = null;
                     this._type = value;
-                    this._updateAssembler();
+                    this.setVertsDirty();
+                    this._resetAssembler();
                 }
             },
             type: SpriteType,
@@ -256,20 +252,14 @@ var Sprite = cc.Class({
          * sprite.fillType = cc.Sprite.FillType.HORIZONTAL;
          */
         fillType : {
-            get: function () {
+            get () {
                 return this._fillType;
             },
-            set: function(value) {
+            set (value) {
                 if (value !== this._fillType) {
-                    if (value === FillType.RADIAL || this._fillType === FillType.RADIAL) {
-                        this.destroyRenderData(this._renderData);
-                        this._renderData = null;
-                    }
-                    else if (this._renderData) {
-                        this.markForUpdateRenderData(true);
-                    }
                     this._fillType = value;
-                    this._updateAssembler();
+                    this.setVertsDirty();
+                    this._resetAssembler();
                 }
             },
             type: FillType,
@@ -287,14 +277,14 @@ var Sprite = cc.Class({
          * sprite.fillCenter = new cc.Vec2(0, 0);
          */
         fillCenter: {
-            get: function() {
+            get () {
                 return this._fillCenter;
             },
-            set: function(value) {
+            set (value) {
                 this._fillCenter.x = value.x;
                 this._fillCenter.y = value.y;
-                if (this._type === SpriteType.FILLED && this._renderData) {
-                    this.markForUpdateRenderData(true);
+                if (this._type === SpriteType.FILLED) {
+                    this.setVertsDirty();
                 }
             },
             tooltip: CC_DEV && 'i18n:COMPONENT.sprite.fill_center',
@@ -312,13 +302,13 @@ var Sprite = cc.Class({
          * sprite.fillStart = 0.5;
          */
         fillStart: {
-            get: function() {
+            get () {
                 return this._fillStart;
             },
-            set: function(value) {
+            set (value) {
                 this._fillStart = misc.clampf(value, -1, 1);
-                if (this._type === SpriteType.FILLED && this._renderData) {
-                    this.markForUpdateRenderData(true);
+                if (this._type === SpriteType.FILLED) {
+                    this.setVertsDirty();
                 }
             },
             tooltip: CC_DEV && 'i18n:COMPONENT.sprite.fill_start'
@@ -336,13 +326,13 @@ var Sprite = cc.Class({
          * sprite.fillRange = 1;
          */
         fillRange: {
-            get: function() {
+            get () {
                 return this._fillRange;
             },
-            set: function(value) {
+            set (value) {
                 this._fillRange = misc.clampf(value, -1, 1);
-                if (this._type === SpriteType.FILLED && this._renderData) {
-                    this.markForUpdateRenderData(true);
+                if (this._type === SpriteType.FILLED) {
+                    this.setVertsDirty();
                 }
             },
             tooltip: CC_DEV && 'i18n:COMPONENT.sprite.fill_range'
@@ -356,15 +346,14 @@ var Sprite = cc.Class({
          * sprite.trim = true;
          */
         trim: {
-            get: function () {
+            get () {
                 return this._isTrimmedMode;
             },
-            set: function (value) {
+            set (value) {
                 if (this._isTrimmedMode !== value) {
                     this._isTrimmedMode = value;
-                    if ((this._type === SpriteType.SIMPLE || this._type === SpriteType.MESH) && 
-                        this._renderData) {
-                        this.markForUpdateRenderData(true);
+                    if (this._type === SpriteType.SIMPLE || this._type === SpriteType.MESH) {
+                        this.setVertsDirty();
                     }
                 }
             },
@@ -382,10 +371,10 @@ var Sprite = cc.Class({
          * sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
          */
         sizeMode: {
-            get: function () {
+            get () {
                 return this._sizeMode;
             },
-            set: function (value) {
+            set (value) {
                 this._sizeMode = value;
                 if (value !== SizeMode.CUSTOM) {
                     this._applySpriteSize();
@@ -404,7 +393,7 @@ var Sprite = cc.Class({
         State: State,
     },
 
-    setVisible: function (visible) {
+    setVisible (visible) {
         this.enabled = visible;
     },
 
@@ -426,83 +415,29 @@ var Sprite = cc.Class({
      */
     getState () {},
 
-    onEnable: function () {
+    onEnable () {
         this._super();
+        this._applySpriteFrame();
 
-        if (!this._spriteFrame || !this._spriteFrame.textureLoaded()) {
-            // Do not render when sprite frame is not ready
-            this.disableRender();
-            if (this._spriteFrame) {
-                this._spriteFrame.once('load', this._onTextureLoaded, this);
-                this._spriteFrame.ensureLoadTexture();
-            }
-        }
-        
-        this._updateAssembler();
-        this._activateMaterial();
-
-        this.node.on(NodeEvent.SIZE_CHANGED, this._onNodeSizeDirty, this);
-        this.node.on(NodeEvent.ANCHOR_CHANGED, this._onNodeSizeDirty, this);
+        this.node.on(cc.Node.EventType.SIZE_CHANGED, this.setVertsDirty, this);
+        this.node.on(cc.Node.EventType.ANCHOR_CHANGED, this.setVertsDirty, this);
     },
 
-    onDisable: function () {
+    onDisable () {
         this._super();
-
-        this.node.off(NodeEvent.SIZE_CHANGED, this._onNodeSizeDirty, this);
-        this.node.off(NodeEvent.ANCHOR_CHANGED, this._onNodeSizeDirty, this);
-    },
-
-    _onNodeSizeDirty () {
-        if (!this._renderData) return;
-        this.markForUpdateRenderData(true);
-    },
-
-    _on3DNodeChanged () {
-        this._updateAssembler();
-    },
-
-    _updateAssembler: function () {
-        let assembler = Sprite._assembler.getAssembler(this);
         
-        if (this._assembler !== assembler) {
-            this._assembler = assembler;
-            this._renderData = null;
-        }
-
-        if (!this._renderData) {
-            this._renderData = this._assembler.createData(this);
-            this.markForUpdateRenderData(true);
-        }
+        this.node.off(cc.Node.EventType.SIZE_CHANGED, this.setVertsDirty, this);
+        this.node.off(cc.Node.EventType.ANCHOR_CHANGED, this.setVertsDirty, this);
     },
 
-    _activateMaterial: function () {
-        // If render type is canvas, just return.
-        if (cc.game.renderType === cc.game.RENDER_TYPE_CANVAS) {
-            this.markForUpdateRenderData(true);
-            this.markForRender(true);
-            return;
-        }
-
-        let spriteFrame = this._spriteFrame;
-        // If spriteframe not loaded, disable render and return.
-        if (!spriteFrame || !spriteFrame.textureLoaded()) {
-            this.disableRender();
-            return;
-        }
+    _updateMaterial () {
+        let texture = this._spriteFrame && this._spriteFrame.getTexture();
         
         // make sure material is belong to self.
-        let material = this.sharedMaterials[0];
-        if (!material) {
-            material = Material.getInstantiatedBuiltinMaterial('2d-sprite', this);
-        }
-        else {
-            material = Material.getInstantiatedMaterial(material, this);
-        }
-        
-        material.setProperty('texture', spriteFrame.getTexture());
+        let material = this.getMaterial(0);
+        material && material.setProperty('texture', texture);
 
-        this.setMaterial(0, material);
-        this.markForRender(true);
+        BlendFunc.prototype._updateMaterial.call(this);
     },
 
     _applyAtlas: CC_EDITOR && function (spriteFrame) {
@@ -517,83 +452,51 @@ var Sprite = cc.Class({
         }
     },
 
-    _canRender () {
-        if (cc.game.renderType === cc.game.RENDER_TYPE_CANVAS) {
-            if (!this._enabled) return false;
-        }
-        else {
-            if (!this._enabled || !this.sharedMaterials[0] || !this.node._activeInHierarchy) return false;
-        }
-
+    _validateRender () {
         let spriteFrame = this._spriteFrame;
-        if (!spriteFrame || !spriteFrame.textureLoaded()) {
-            return false;
-        }
-        return true;
-    },
-
-    markForUpdateRenderData (enable) {
-        if (enable && this._canRender()) {
-            this.node._renderFlag |= RenderFlow.FLAG_UPDATE_RENDER_DATA;
-            
-            let renderData = this._renderData;
-            if (renderData) {
-                renderData.uvDirty = true;
-                renderData.vertDirty = true;
-            }
-        }
-        else if (!enable) {
-            this.node._renderFlag &= ~RenderFlow.FLAG_UPDATE_RENDER_DATA;
-        }
-    },
-
-    _applySpriteSize: function () {
-        if (this._spriteFrame) {
-            if (SizeMode.RAW === this._sizeMode) {
-                var size = this._spriteFrame.getOriginalSize();
-                this.node.setContentSize(size);
-            } else if (SizeMode.TRIMMED === this._sizeMode) {
-                var rect = this._spriteFrame.getRect();
-                this.node.setContentSize(rect.width, rect.height);
-            }
-            
-            this._activateMaterial();
-        }
-    },
-
-    _onTextureLoaded: function () {
-        if (!this.isValid) {
+        if (this._materials[0] &&
+            spriteFrame && 
+            spriteFrame.textureLoaded()) {
             return;
         }
 
-        this._applySpriteSize();
+        this.disableRender();
     },
 
-    _applySpriteFrame: function (oldFrame) {
-        if (oldFrame && oldFrame.off) {
-            oldFrame.off('load', this._onTextureLoaded, this);
+    _applySpriteSize () {
+        if (!this._spriteFrame || !this.isValid)  return;
+        
+        if (SizeMode.RAW === this._sizeMode) {
+            var size = this._spriteFrame._originalSize;
+            this.node.setContentSize(size);
+        } else if (SizeMode.TRIMMED === this._sizeMode) {
+            var rect = this._spriteFrame._rect;
+            this.node.setContentSize(rect.width, rect.height);
+        }
+        
+        this.setVertsDirty();
+    },
+
+    _applySpriteFrame (oldFrame) {
+        let oldTexture = oldFrame && oldFrame.getTexture();
+        if (oldTexture && !oldTexture.loaded) {
+            oldFrame.off('load', this._applySpriteSize, this);
         }
 
-        var spriteFrame = this._spriteFrame;
-        let material = this.sharedMaterials[0];
-        if (!spriteFrame || (material && material._texture) !== (spriteFrame && spriteFrame._texture)) {
-            // disable render flow until texture is loaded
-            this.markForRender(false);
-        }
-
+        let spriteFrame = this._spriteFrame;
         if (spriteFrame) {
-            if (!oldFrame || spriteFrame._texture !== oldFrame._texture) {
-                if (spriteFrame.textureLoaded()) {
-                    this._onTextureLoaded(null);
-                }
-                else {
-                    spriteFrame.once('load', this._onTextureLoaded, this);
-                    spriteFrame.ensureLoadTexture();
-                }
-            }
-            else {
+            this._updateMaterial();
+            let newTexture = spriteFrame.getTexture();
+            if (oldTexture === newTexture && newTexture.loaded) {
                 this._applySpriteSize();
             }
+            else {
+                this.disableRender();
+                spriteFrame.onTextureLoaded(this._applySpriteSize, this);
+            }
+        }
+        else {
+            this.disableRender();
         }
 
         if (CC_EDITOR) {
@@ -601,8 +504,10 @@ var Sprite = cc.Class({
             this._applyAtlas(spriteFrame);
         }
     },
+});
 
-    _resized: CC_EDITOR && function () {
+if (CC_EDITOR) {
+    Sprite.prototype._resizedInEditor = function () {
         if (this._spriteFrame) {
             var actualSize = this.node.getContentSize();
             var expectedW = actualSize.width;
@@ -622,21 +527,19 @@ var Sprite = cc.Class({
                 this._sizeMode = SizeMode.CUSTOM;
             }
         }
-    },
-});
+    };
 
-if (CC_EDITOR) {
     // override __preload
-    Sprite.prototype.__superPreload = cc.Component.prototype.__preload;
+    Sprite.prototype.__superPreload = cc.RenderComponent.prototype.__preload;
     Sprite.prototype.__preload = function () {
         if (this.__superPreload) this.__superPreload();
-        this.node.on(NodeEvent.SIZE_CHANGED, this._resized, this);
+        this.node.on(NodeEvent.SIZE_CHANGED, this._resizedInEditor, this);
     };
     // override onDestroy
     Sprite.prototype.__superOnDestroy = cc.Component.prototype.onDestroy;
     Sprite.prototype.onDestroy = function () {
         if (this.__superOnDestroy) this.__superOnDestroy();
-        this.node.off(NodeEvent.SIZE_CHANGED, this._resized, this);
+        this.node.off(NodeEvent.SIZE_CHANGED, this._resizedInEditor, this);
     };
 }
 

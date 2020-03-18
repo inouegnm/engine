@@ -34,21 +34,7 @@ var IsEditorOnEnableCalled = Flags.IsEditorOnEnableCalled;
 
 var callerFunctor = CC_EDITOR && require('./utils/misc').tryCatchFunctor_EDITOR;
 var callOnEnableInTryCatch = CC_EDITOR && callerFunctor('onEnable');
-var callStartInTryCatch = CC_EDITOR && callerFunctor('start', null, 'target._objFlags |= ' + IsStartCalled);
-var callUpdateInTryCatch = CC_EDITOR && callerFunctor('update', 'dt');
-var callLateUpdateInTryCatch = CC_EDITOR && callerFunctor('lateUpdate', 'dt');
 var callOnDisableInTryCatch = CC_EDITOR && callerFunctor('onDisable');
-
-var callStart = CC_SUPPORT_JIT ? 'c.start();c._objFlags|=' + IsStartCalled : function (c) {
-    c.start();
-    c._objFlags |= IsStartCalled;
-};
-var callUpdate = CC_SUPPORT_JIT ? 'c.update(dt)' : function (c, dt) {
-    c.update(dt);
-};
-var callLateUpdate = CC_SUPPORT_JIT ? 'c.lateUpdate(dt)' : function (c, dt) {
-    c.lateUpdate(dt);
-};
 
 function sortedIndex (array, comp) {
     var order = comp.constructor._executionOrder;
@@ -215,61 +201,104 @@ function enableInEditor (comp) {
     }
 }
 
-function createInvokeImpl (funcOrCode, useDt) {
-    if (typeof funcOrCode === 'function') {
-        if (useDt) {
-            return function (iterator, dt) {
-                var array = iterator.array;
-                for (iterator.i = 0; iterator.i < array.length; ++iterator.i) {
-                    var comp = array[iterator.i];
-                    funcOrCode(comp, dt);
-                }
-            };
-        }
-        else {
-            return function (iterator) {
-                var array = iterator.array;
-                for (iterator.i = 0; iterator.i < array.length; ++iterator.i) {
-                    var comp = array[iterator.i];
-                    funcOrCode(comp);
-                }
-            };
-        }
-    }
-    else {
+// return function to simply call each component with try catch protection
+function createInvokeImpl (indiePath, useDt, ensureFlag, fastPath) {
+    if (CC_SUPPORT_JIT) {
         // function (it) {
         //     var a = it.array;
         //     for (it.i = 0; it.i < a.length; ++it.i) {
-        //         var comp = a[it.i];
+        //         var c = a[it.i];
         //         // ...
         //     }
         // }
-        var body = 'var a=it.array;' +
+        let body = 'var a=it.array;' +
                    'for(it.i=0;it.i<a.length;++it.i){' +
                    'var c=a[it.i];' +
-                   funcOrCode +
+                   indiePath +
                    '}';
-        if (useDt) {
-            return Function('it', 'dt', body);
-        }
-        else {
-            return Function('it', body);
-        }
+        fastPath = useDt ? Function('it', 'dt', body) : Function('it', body);
+        indiePath = Function('c', 'dt', indiePath);
     }
+    return function (iterator, dt) {
+        try {
+            fastPath(iterator, dt);
+        }
+        catch (e) {
+            // slow path
+            cc._throw(e);
+            var array = iterator.array;
+            if (ensureFlag) {
+                array[iterator.i]._objFlags |= ensureFlag;
+            }
+            ++iterator.i;   // invoke next callback
+            for (; iterator.i < array.length; ++iterator.i) {
+                try {
+                    indiePath(array[iterator.i], dt);
+                }
+                catch (e) {
+                    cc._throw(e);
+                    if (ensureFlag) {
+                        array[iterator.i]._objFlags |= ensureFlag;
+                    }
+                }
+            }
+        }
+    };
 }
 
-
+var invokeStart = CC_SUPPORT_JIT ?
+    createInvokeImpl('c.start();c._objFlags|=' + IsStartCalled, false, IsStartCalled) :
+    createInvokeImpl(function (c) {
+            c.start();
+            c._objFlags |= IsStartCalled;
+        },
+        false,
+        IsStartCalled,
+        function (iterator) {
+            var array = iterator.array;
+            for (iterator.i = 0; iterator.i < array.length; ++iterator.i) {
+                let comp = array[iterator.i];
+                comp.start();
+                comp._objFlags |= IsStartCalled;
+            }
+        }
+    );
+var invokeUpdate = CC_SUPPORT_JIT ?
+    createInvokeImpl('c.update(dt)', true) :
+    createInvokeImpl(function (c, dt) {
+            c.update(dt);
+        },
+        true,
+        undefined,
+        function (iterator, dt) {
+            var array = iterator.array;
+            for (iterator.i = 0; iterator.i < array.length; ++iterator.i) {
+                array[iterator.i].update(dt);
+            }
+        }
+    );
+var invokeLateUpdate = CC_SUPPORT_JIT ?
+    createInvokeImpl('c.lateUpdate(dt)', true) :
+    createInvokeImpl(function (c, dt) {
+            c.lateUpdate(dt);
+        },
+        true,
+        undefined,
+        function (iterator, dt) {
+            var array = iterator.array;
+            for (iterator.i = 0; iterator.i < array.length; ++iterator.i) {
+                array[iterator.i].lateUpdate(dt);
+            }
+        }
+    );
 /**
  * The Manager for Component's life-cycle methods.
  */
 function ctor () {
     // invokers
-    this.startInvoker = new OneOffInvoker(createInvokeImpl(
-        CC_EDITOR ? callStartInTryCatch : callStart));
-    this.updateInvoker = new ReusableInvoker(createInvokeImpl(
-        CC_EDITOR ? callUpdateInTryCatch : callUpdate, true));
-    this.lateUpdateInvoker = new ReusableInvoker(createInvokeImpl(
-        CC_EDITOR ? callLateUpdateInTryCatch : callLateUpdate, true));
+    this.startInvoker = new OneOffInvoker(invokeStart);
+    this.updateInvoker = new ReusableInvoker(invokeUpdate);
+    this.lateUpdateInvoker = new ReusableInvoker(invokeLateUpdate);
 
     // components deferred to next frame
     this.scheduleInNextFrame = [];
@@ -435,6 +464,15 @@ var ComponentScheduler = cc.Class({
         comps.length = 0;
     },
 
+    // Call new registered start schedule immediately since last time start phase calling in this frame
+    // See cocos-creator/2d-tasks/issues/256
+    _earlyStartForNewComps () {
+        if (this.scheduleInNextFrame.length > 0) {
+            this._deferredSchedule();
+            this.startInvoker.invoke();
+        }
+    },
+
     startPhase () {
         // Start of this frame
         this._updating = true;
@@ -445,6 +483,11 @@ var ComponentScheduler = cc.Class({
 
         // call start
         this.startInvoker.invoke();
+
+        // As is often the case, _deferredSchedule should clear scheduleInNextFrame,
+        // once not cleared, it indicates that there is a node activated during start
+        this._earlyStartForNewComps();
+
         // if (CC_PREVIEW) {
         //     try {
         //         this.startInvoker.invoke();
@@ -471,7 +514,11 @@ var ComponentScheduler = cc.Class({
 
         // End of this frame
         this._updating = false;
-    }
+    },
+
+    clearup () {
+        this._earlyStartForNewComps();
+    },
 });
 
 module.exports = ComponentScheduler;

@@ -73,13 +73,6 @@ function downloadScript (item, callback, isAsync) {
     d.body.appendChild(s);
 }
 
-function downloadWebp (item, callback, isCrossOrigin, img) {
-    if (!cc.sys.capabilities.webp) {
-        return new Error(debug.getError(4929, item.url));
-    }
-    return downloadImage(item, callback, isCrossOrigin, img);
-}
-
 function downloadImage (item, callback, isCrossOrigin, img) {
     if (isCrossOrigin === undefined) {
         isCrossOrigin = true;
@@ -146,7 +139,7 @@ var defaultMap = {
     'gif' : downloadImage,
     'ico' : downloadImage,
     'tiff' : downloadImage,
-    'webp' : downloadWebp,
+    'webp' : downloadImage,
     'image' : downloadImage,
     'pvr': downloadBinary,
     'pkm': downloadBinary,
@@ -188,6 +181,7 @@ var defaultMap = {
     'binary' : downloadBinary,
     'bin' : downloadBinary,
     'dbbin' : downloadBinary,
+    'skel': downloadBinary,
 
     'default' : downloadText
 };
@@ -295,10 +289,15 @@ Downloader.prototype.handle = function (item, callback) {
  * 通过子包名加载子包代码。
  * @method loadSubpackage
  * @param {String} name - Subpackage name
+ * @param {Function} [progressCallback] - Callback when progress changed
  * @param {Function} [completeCallback] -  Callback invoked when subpackage loaded
  * @param {Error} completeCallback.error - error information
  */
-Downloader.prototype.loadSubpackage = function (name, completeCallback) {
+Downloader.prototype.loadSubpackage = function (name, progressCallback, completeCallback) {
+    if (!completeCallback && progressCallback) {
+        completeCallback = progressCallback;
+        progressCallback = null;
+    }
     let pac = this._subpackages[name];
     if (pac) {
         if (pac.loaded) {

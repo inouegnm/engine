@@ -24,7 +24,12 @@
  THE SOFTWARE.
  ****************************************************************************/
 
-var Event = require('../CCNode').EventType;
+var Event;
+
+// Support serializing widget in asset db, see cocos-creator/2d-tasks/issues/1894
+if (!CC_EDITOR || !Editor.isMainProcess) {
+  Event = require('../CCNode').EventType;
+}
 
 var TOP     = 1 << 0;
 var MID     = 1 << 1;   // vertical center
@@ -52,14 +57,13 @@ function getReadonlyNodeSize (parent) {
 }
 
 function computeInverseTransForTarget (widgetNode, target, out_inverseTranslate, out_inverseScale) {
-    var scaleX = widgetNode._parent._scale.x;
-    var scaleY = widgetNode._parent._scale.y;
+    var scaleX = widgetNode._parent.scaleX;
+    var scaleY = widgetNode._parent.scaleY;
     var translateX = 0;
     var translateY = 0;
     for (var node = widgetNode._parent;;) {
-        var pos = node._position;
-        translateX += pos.x;
-        translateY += pos.y;
+        translateX += node.x;
+        translateY += node.y;
         node = node._parent;    // loop increment
         if (!node) {
             // ERROR: widgetNode should be child of target
@@ -68,8 +72,8 @@ function computeInverseTransForTarget (widgetNode, target, out_inverseTranslate,
             return;
         }
         if (node !== target) {
-            var sx = node._scale.x;
-            var sy = node._scale.y;
+            var sx = node.scaleX;
+            var sy = node.scaleY;
             translateX *= sx;
             translateY *= sy;
             scaleX *= sx;
@@ -106,7 +110,7 @@ function align (node, widget) {
     var targetAnchor = target._anchorPoint;
 
     var isRoot = !CC_EDITOR && target instanceof cc.Scene;
-    var x = node._position.x, y = node._position.y;
+    var x = node.x, y = node.y;
     var anchor = node._anchorPoint;
 
     if (widget._alignFlags & HORIZONTAL) {
@@ -132,7 +136,7 @@ function align (node, widget) {
             localRight *= inverseScale.x;
         }
 
-        var width, anchorX = anchor.x, scaleX = node._scale.x;
+        var width, anchorX = anchor.x, scaleX = node.scaleX;
         if (scaleX < 0) {
             anchorX = 1.0 - anchorX;
             scaleX = -scaleX;
@@ -189,7 +193,7 @@ function align (node, widget) {
             localTop *= inverseScale.y;
         }
 
-        var height, anchorY = anchor.y, scaleY = node._scale.y;
+        var height, anchorY = anchor.y, scaleY = node.scaleY;
         if (scaleY < 0) {
             anchorY = 1.0 - anchorY;
             scaleY = -scaleY;
@@ -460,8 +464,10 @@ var widgetManager = cc._widgetManager = module.exports = {
             cc.engine.on('design-resolution-changed', this.onResized.bind(this));
         }
         else {
-            if (cc.sys.isMobile) {
-                window.addEventListener('resize', this.onResized.bind(this));
+            if (cc.sys.isBrowser && cc.sys.isMobile) {
+                let thisOnResized = this.onResized.bind(this);
+                window.addEventListener('resize', thisOnResized);
+                window.addEventListener('orientationchange', thisOnResized);
             }
             else {
                 cc.view.on('canvas-resize', this.onResized, this);

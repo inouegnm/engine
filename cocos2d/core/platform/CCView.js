@@ -30,15 +30,9 @@ const js = require('../platform/js');
 const renderer = require('../renderer');
 require('../platform/CCClass');
 
-// TODO: move into adapter
-const isXiaomiGame = (cc.sys.platform === cc.sys.XIAOMI_GAME);
-const isBaiduGame = (cc.sys.platform === cc.sys.BAIDU_GAME);
-
 var __BrowserGetter = {
     init: function(){
-        if (!CC_WECHATGAME && !CC_QQPLAY && !isBaiduGame && !isXiaomiGame) {
-            this.html = document.getElementsByTagName("html")[0];
-        }
+        this.html = document.getElementsByTagName("html")[0];
     },
     availWidth: function(frame){
         if (!frame || frame === this.html)
@@ -61,59 +55,30 @@ var __BrowserGetter = {
 if (cc.sys.os === cc.sys.OS_IOS) // All browsers are WebView
     __BrowserGetter.adaptationType = cc.sys.BROWSER_TYPE_SAFARI;
 
-if (isBaiduGame) {
-    if (cc.sys.browserType === cc.sys.BROWSER_TYPE_BAIDU_GAME_SUB) {
-        __BrowserGetter.adaptationType = cc.sys.BROWSER_TYPE_BAIDU_GAME_SUB;
-    }
-    else {
-        __BrowserGetter.adaptationType = cc.sys.BROWSER_TYPE_BAIDU_GAME;
-    }
-}
-
-if (isXiaomiGame) {
-    __BrowserGetter.adaptationType = cc.sys.BROWSER_TYPE_XIAOMI_GAME;
-}
-
-if (CC_WECHATGAME) {
-    if (cc.sys.browserType === cc.sys.BROWSER_TYPE_WECHAT_GAME_SUB) {
-        __BrowserGetter.adaptationType = cc.sys.BROWSER_TYPE_WECHAT_GAME_SUB;
-    }
-    else {
-        __BrowserGetter.adaptationType = cc.sys.BROWSER_TYPE_WECHAT_GAME;
-    }
-}
-
-if (CC_QQPLAY) {
-    __BrowserGetter.adaptationType = cc.sys.BROWSER_TYPE_QQ_PLAY;
-}
-
 switch (__BrowserGetter.adaptationType) {
     case cc.sys.BROWSER_TYPE_SAFARI:
         __BrowserGetter.meta["minimal-ui"] = "true";
+        __BrowserGetter.availWidth = cc.sys.isMobile ? function (frame){
+            // bug fix for navigation bar on Safari
+            return window.innerWidth;
+        } : function (frame) {
+            return frame.clientWidth;
+        }
+        __BrowserGetter.availHeight = cc.sys.isMobile ? function (frame){
+            // bug fix for navigation bar on Safari
+            return window.innerHeight;
+        } : function (frame) {
+            return frame.clientHeight;
+        }
+        break;
     case cc.sys.BROWSER_TYPE_SOUGOU:
     case cc.sys.BROWSER_TYPE_UC:
+        __BrowserGetter.meta["minimal-ui"] = "true";
         __BrowserGetter.availWidth = function(frame){
             return frame.clientWidth;
         };
         __BrowserGetter.availHeight = function(frame){
             return frame.clientHeight;
-        };
-        break;
-    case cc.sys.BROWSER_TYPE_WECHAT_GAME:
-        __BrowserGetter.availWidth = function(){
-            return window.innerWidth;
-        };
-        __BrowserGetter.availHeight = function(){
-            return window.innerHeight;
-        };
-        break;
-    case cc.sys.BROWSER_TYPE_WECHAT_GAME_SUB:
-        var sharedCanvas = window.sharedCanvas || wx.getSharedCanvas();
-        __BrowserGetter.availWidth = function(){
-            return sharedCanvas.width;
-        };
-        __BrowserGetter.availHeight = function(){
-            return sharedCanvas.height;
         };
         break;
 }
@@ -133,6 +98,7 @@ var _scissorRect = null;
  *  - cc.view.methodName(); <br/>
  *
  * @class View
+ * @extends EventTarget
  */
 var View = function () {
     EventTarget.call(this);
@@ -157,7 +123,11 @@ var View = function () {
     _t._autoFullScreen = false;
     // The device's pixel ratio (for retina displays)
     _t._devicePixelRatio = 1;
-    _t._maxPixelRatio = 2;
+    if(CC_JSB) {
+        _t._maxPixelRatio = 4;
+    } else {
+        _t._maxPixelRatio = 2;
+    }
     // Retina disabled by default
     _t._retinaEnabled = false;
     // Custom callback for resize event
@@ -183,11 +153,9 @@ var View = function () {
 
 cc.js.extend(View, EventTarget);
 
-
 cc.js.mixin(View.prototype, {
     init () {
         this._initFrameSize();
-        this.enableAntiAlias(true);
 
         var w = cc.game.canvas.width, h = cc.game.canvas.height;
         this._designResolutionSize.width = w;
@@ -247,6 +215,16 @@ cc.js.mixin(View.prototype, {
     _orientationChange: function () {
         cc.view._orientationChanging = true;
         cc.view._resizeEvent();
+        // HACK: show nav bar on iOS safari
+        // safari will enter fullscreen when rotate to landscape
+        // need to exit fullscreen when rotate back to portrait, scrollTo(0, 1) works.
+        if (cc.sys.browserType === cc.sys.BROWSER_TYPE_SAFARI && cc.sys.isMobile) {
+            setTimeout(() => {
+                if (window.innerHeight > window.innerWidth) {
+                    window.scrollTo(0, 1);
+                }
+            }, 500);
+        }
     },
 
     /**
@@ -375,14 +353,6 @@ cc.js.mixin(View.prototype, {
         }
     },
 
-    // hack
-    _adjustSizeKeepCanvasSize: function () {
-        var designWidth = this._originalDesignResolutionSize.width;
-        var designHeight = this._originalDesignResolutionSize.height;
-        if (designWidth > 0)
-            this.setDesignResolutionSize(designWidth, designHeight, this._resolutionPolicy);
-    },
-
     _setViewportMeta: function (metas, overwrite) {
         var vp = document.getElementById("cocosMetaElement");
         if(vp && overwrite){
@@ -420,7 +390,7 @@ cc.js.mixin(View.prototype, {
     },
 
     _adjustViewportMeta: function () {
-        if (this._isAdjustViewport && !CC_JSB && !CC_RUNTIME && !CC_WECHATGAME && !CC_QQPLAY && !isBaiduGame && !isXiaomiGame) {
+        if (this._isAdjustViewport && !CC_JSB && !CC_RUNTIME) {
             this._setViewportMeta(__BrowserGetter.meta, false);
             this._isAdjustViewport = false;
         }
@@ -455,6 +425,10 @@ cc.js.mixin(View.prototype, {
      * @param {Boolean} enabled - Enable or disable retina display
      */
     enableRetina: function(enabled) {
+        if (CC_EDITOR && enabled) {
+            cc.warn('Can not enable retina in Editor.');
+            return;
+        }
         this._retinaEnabled = !!enabled;
     },
 
@@ -468,6 +442,9 @@ cc.js.mixin(View.prototype, {
      * @return {Boolean}
      */
     isRetinaEnabled: function() {
+        if (CC_EDITOR) {
+            return false;
+        }
         return this._retinaEnabled;
     },
 
@@ -476,8 +453,11 @@ cc.js.mixin(View.prototype, {
      * !#zh 控制抗锯齿是否开启
      * @method enableAntiAlias
      * @param {Boolean} enabled - Enable or not anti-alias
+     * @deprecated cc.view.enableAntiAlias is deprecated now, please use cc.Texture2D.setFilters instead
+     * @since v2.3.0
      */
     enableAntiAlias: function (enabled) {
+        cc.warnID(9200);
         if (this._antiAliasEnabled === enabled) {
             return;
         }
@@ -527,8 +507,7 @@ cc.js.mixin(View.prototype, {
     enableAutoFullScreen: function(enabled) {
         if (enabled && 
             enabled !== this._autoFullScreen && 
-            cc.sys.isMobile && 
-            cc.sys.browserType !== cc.sys.BROWSER_TYPE_WECHAT) {
+            cc.sys.isMobile) {
             // Automatically full screen when user touches on mobile version
             this._autoFullScreen = true;
             cc.screen.autoFullScreen(cc.game.frame);
@@ -788,6 +767,7 @@ cc.js.mixin(View.prototype, {
         cc.visibleRect && cc.visibleRect.init(this._visibleRect);
 
         renderer.updateCameraViewport();
+        cc.internal.inputManager._updateCanvasBoundingRect();
         this.emit('design-resolution-changed');
     },
 
@@ -822,7 +802,7 @@ cc.js.mixin(View.prototype, {
      * @param {ResolutionPolicy|Number} resolutionPolicy The resolution policy desired
      */
     setRealPixelResolution: function (width, height, resolutionPolicy) {
-        if (!CC_JSB && !CC_RUNTIME && !CC_WECHATGAME && !CC_QQPLAY && !isBaiduGame && !isXiaomiGame) {
+        if (!CC_JSB && !CC_RUNTIME) {
             // Set viewport's width
             this._setViewportMeta({"width": width}, true);
 
@@ -980,8 +960,10 @@ cc.js.mixin(View.prototype, {
      */
     convertToLocationInView: function (tx, ty, relatedPos, out) {
         let result = out || cc.v2();
-        let x = this._devicePixelRatio * (tx - relatedPos.left);
-        let y = this._devicePixelRatio * (relatedPos.top + relatedPos.height - ty);
+        let posLeft = relatedPos.adjustedLeft ? relatedPos.adjustedLeft : relatedPos.left;
+        let posTop = relatedPos.adjustedTop ? relatedPos.adjustedTop : relatedPos.top;
+        let x = this._devicePixelRatio * (tx - posLeft);
+        let y = this._devicePixelRatio * (posTop + relatedPos.height - ty);
         if (this._isRotated) {
             result.x = cc.game.canvas.width - y;
             result.y = x;
@@ -1022,16 +1004,16 @@ cc.js.mixin(View.prototype, {
 });
 
 /**
- * !en
+ * !#en
  * Emit when design resolution changed.
- * !zh
+ * !#zh
  * 当设计分辨率改变时发送。
  * @event design-resolution-changed
  */
  /**
- * !en
+ * !#en
  * Emit when canvas resize.
- * !zh
+ * !#zh
  * 当画布大小改变时发送。
  * @event canvas-resize
  */
@@ -1078,24 +1060,33 @@ cc.ContainerStrategy = cc.Class({
     },
 
     _setupContainer: function (view, w, h) {
-        var locCanvas = cc.game.canvas, locContainer = cc.game.container;
+        var locCanvas = cc.game.canvas;
 
-        if (!CC_WECHATGAME && !isBaiduGame && !isXiaomiGame) {
-            if (cc.sys.os === cc.sys.OS_ANDROID) {
-                document.body.style.width = (view._isRotated ? h : w) + 'px';
-                document.body.style.height = (view._isRotated ? w : h) + 'px';
-            }
-            // Setup style
-            locContainer.style.width = locCanvas.style.width = w + 'px';
-            locContainer.style.height = locCanvas.style.height = h + 'px';
-        }
+        this._setupStyle(view, w, h);
+        
         // Setup pixel ratio for retina display
         var devicePixelRatio = view._devicePixelRatio = 1;
-        if (view.isRetinaEnabled())
+        if(CC_JSB){
+            // view.isRetinaEnabled only work on web. 
+            devicePixelRatio = view._devicePixelRatio = window.devicePixelRatio;
+        }else if (view.isRetinaEnabled()) {
             devicePixelRatio = view._devicePixelRatio = Math.min(view._maxPixelRatio, window.devicePixelRatio || 1);
+        }
         // Setup canvas
         locCanvas.width = w * devicePixelRatio;
         locCanvas.height = h * devicePixelRatio;
+    },
+
+    _setupStyle: function (view, w, h) {
+        let locCanvas = cc.game.canvas;
+        let locContainer = cc.game.container;
+        if (cc.sys.os === cc.sys.OS_ANDROID) {
+            document.body.style.width = (view._isRotated ? h : w) + 'px';
+            document.body.style.height = (view._isRotated ? w : h) + 'px';
+        }
+        // Setup style
+        locContainer.style.width = locCanvas.style.width = w + 'px';
+        locContainer.style.height = locCanvas.style.height = h + 'px';
     },
 
     _fixContainer: function () {
@@ -1293,6 +1284,18 @@ cc.ContentStrategy = cc.Class({
             this._setupContainer(view, cc.game.canvas.width, cc.game.canvas.height);
         }
     });
+
+    // need to adapt prototype before instantiating
+    let _global = typeof window === 'undefined' ? global : window;
+    let globalAdapter = _global.__globalAdapter;
+    if (globalAdapter) {
+        if (globalAdapter.adaptContainerStrategy) {
+            globalAdapter.adaptContainerStrategy(cc.ContainerStrategy.prototype);
+        }
+        if (globalAdapter.adaptView) {
+            globalAdapter.adaptView(View.prototype);
+        }
+    }
 
 // #NOT STABLE on Android# Alias: Strategy that makes the container's size equals to the window's size
 //    cc.ContainerStrategy.EQUAL_TO_WINDOW = new EqualToWindow();
@@ -1553,6 +1556,6 @@ cc.view = new View();
  * @property winSize
  * @type Size
  */
-cc.winSize = cc.v2();
+cc.winSize = cc.size();
 
 module.exports = cc.view;

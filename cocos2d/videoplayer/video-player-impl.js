@@ -23,10 +23,9 @@
  THE SOFTWARE.
  ****************************************************************************/
 
-import { mat4 } from '../core/vmath';
-
 const utils = require('../core/platform/utils');
 const sys = require('../core/platform/CCSys');
+const macro = require('../core/platform/CCMacro');
 
 const READY_STATE = {
     HAVE_NOTHING: 0,
@@ -36,7 +35,7 @@ const READY_STATE = {
     HAVE_ENOUGH_DATA: 4
 };
 
-let _mat4_temp = mat4.create();
+let _mat4_temp = cc.mat4();
 
 let VideoPlayerImpl = cc.Class({
     name: 'VideoPlayerImpl',
@@ -48,16 +47,18 @@ let VideoPlayerImpl = cc.Class({
         this._video = null;
         this._url = '';
 
+        this._waitingFullscreen = false;
         this._fullScreenEnabled = false;
+        this._stayOnBottom = false;
 
         this._loadedmeta = false;
         this._loaded = false;
         this._visible = false;
         this._playing = false;
         this._ignorePause = false;
+        this._forceUpdate = false;
 
         // update matrix cache
-        this._forceUpdate = true;
         this._m00 = 0;
         this._m01 = 0;
         this._m04 = 0;
@@ -76,11 +77,10 @@ let VideoPlayerImpl = cc.Class({
         let cbs = this.__eventListeners;
         cbs.loadedmetadata = function () {
             self._loadedmeta = true;
-            if (self._fullScreenEnabled) {
-                cc.screen.requestFullScreen(video);
-            }
-            else if (cc.screen.fullScreen()) {
-                cc.screen.exitFullScreen(video);
+            self._forceUpdate = true;
+            if (self._waitingFullscreen) {
+                self._waitingFullscreen = false;
+                self._toggleFullscreen(true);
             }
             self._dispatchEvent(VideoPlayerImpl.EventType.META_LOADED);
         };
@@ -123,6 +123,7 @@ let VideoPlayerImpl = cc.Class({
                 video.readyState === READY_STATE.HAVE_METADATA) {
                 video.currentTime = 0;
                 self._loaded = true;
+                self._forceUpdate = true;
                 self._dispatchEvent(VideoPlayerImpl.EventType.READY_TO_PLAY);
                 self._updateVisibility();
             }
@@ -140,13 +141,11 @@ let VideoPlayerImpl = cc.Class({
 
         if (this._visible) {
             video.style.visibility = 'visible';
-            this._forceUpdate = true;
         }
         else {
             video.style.visibility = 'hidden';
             video.pause();
             this._playing = false;
-            this._forceUpdate = false;
         }
     },
 
@@ -163,6 +162,7 @@ let VideoPlayerImpl = cc.Class({
         video.style.position = "absolute";
         video.style.bottom = "0px";
         video.style.left = "0px";
+        video.style['z-index'] = this._stayOnBottom ? macro.MIN_ZINDEX : 0;
         video.className = "cocosVideo";
         video.setAttribute('preload', 'auto');
         video.setAttribute('webkit-playsinline', '');
@@ -218,8 +218,8 @@ let VideoPlayerImpl = cc.Class({
             return;
         }
 
-        this._url = path;
         this.removeDom();
+        this._url = path;
         this.createDomElementIfNeeded(muted);
         this._bindEvent();
 
@@ -355,17 +355,44 @@ let VideoPlayerImpl = cc.Class({
         return true;
     },
 
-    setFullScreenEnabled: function (enable) {
-        let video = this._video;
+    _toggleFullscreen: function (enable) {
+        let self = this, video = this._video;
         if (!video) {
             return;
         }
-        this._fullScreenEnabled = enable;
-        if (enable) {
-            cc.screen.requestFullScreen(video);
+
+        // Monitor video entry and exit full-screen events
+        function handleFullscreenChange (event) {
+            let fullscreenElement = sys.browserType === sys.BROWSER_TYPE_IE ? document.msFullscreenElement : document.fullscreenElement;
+            self._fullScreenEnabled =  (fullscreenElement === video);
         }
-        else if (cc.screen.fullScreen()) {
+        function handleFullScreenError (event) {
+            self._fullScreenEnabled = false;
+        }
+
+        if (enable) {
+            if (sys.browserType === sys.BROWSER_TYPE_IE) {
+                // fix IE full screen content is not centered
+                video.style['transform'] = '';
+            }
+            cc.screen.requestFullScreen(video, handleFullscreenChange, handleFullScreenError);
+        } else if (cc.screen.fullScreen()) {
             cc.screen.exitFullScreen(video);
+        }
+    },
+
+    setStayOnBottom: function (enabled) {
+        this._stayOnBottom = enabled;
+        if (!this._video) return;
+        this._video.style['z-index'] = enabled ? macro.MIN_ZINDEX : 0;
+    },
+
+    setFullScreenEnabled: function (enable) {
+        if (!this._loadedmeta && enable) {
+            this._waitingFullscreen = true;
+        }
+        else {
+            this._toggleFullscreen(enable);
         }
     },
 
@@ -420,41 +447,40 @@ let VideoPlayerImpl = cc.Class({
     },
 
     updateMatrix (node) {
-        if (!this._video || !this._visible) return;
+        if (!this._video || !this._visible || this._fullScreenEnabled) return;
 
         node.getWorldMatrix(_mat4_temp);
 
         let renderCamera = cc.Camera._findRendererCamera(node);
         if (renderCamera) {
-            renderCamera.worldMatrixToScreen(_mat4_temp, _mat4_temp, cc.visibleRect.width, cc.visibleRect.height);
+            renderCamera.worldMatrixToScreen(_mat4_temp, _mat4_temp, cc.game.canvas.width, cc.game.canvas.height);
         }
 
+        let _mat4_tempm = _mat4_temp.m;
         if (!this._forceUpdate &&
-            this._m00 === _mat4_temp.m00 && this._m01 === _mat4_temp.m01 &&
-            this._m04 === _mat4_temp.m04 && this._m05 === _mat4_temp.m05 &&
-            this._m12 === _mat4_temp.m12 && this._m13 === _mat4_temp.m13 &&
+            this._m00 === _mat4_tempm[0] && this._m01 === _mat4_tempm[1] &&
+            this._m04 === _mat4_tempm[4] && this._m05 === _mat4_tempm[5] &&
+            this._m12 === _mat4_tempm[12] && this._m13 === _mat4_tempm[13] &&
             this._w === node._contentSize.width && this._h === node._contentSize.height) {
             return;
         }
 
         // update matrix cache
-        this._m00 = _mat4_temp.m00;
-        this._m01 = _mat4_temp.m01;
-        this._m04 = _mat4_temp.m04;
-        this._m05 = _mat4_temp.m05;
-        this._m12 = _mat4_temp.m12;
-        this._m13 = _mat4_temp.m13;
+        this._m00 = _mat4_tempm[0];
+        this._m01 = _mat4_tempm[1];
+        this._m04 = _mat4_tempm[4];
+        this._m05 = _mat4_tempm[5];
+        this._m12 = _mat4_tempm[12];
+        this._m13 = _mat4_tempm[13];
         this._w = node._contentSize.width;
         this._h = node._contentSize.height;
 
-        let scaleX = cc.view._scaleX, scaleY = cc.view._scaleY;
         let dpr = cc.view._devicePixelRatio;
-
-        scaleX /= dpr;
-        scaleY /= dpr;
+        let scaleX = 1 / dpr;
+        let scaleY = 1 / dpr;
 
         let container = cc.game.container;
-        let a = _mat4_temp.m00 * scaleX, b = _mat4_temp.m01, c = _mat4_temp.m04, d = _mat4_temp.m05 * scaleY;
+        let a = _mat4_tempm[0] * scaleX, b = _mat4_tempm[1], c = _mat4_tempm[4], d = _mat4_tempm[5] * scaleY;
 
         let offsetX = container && container.style.paddingLeft ? parseInt(container.style.paddingLeft) : 0;
         let offsetY = container && container.style.paddingBottom ? parseInt(container.style.paddingBottom) : 0;
@@ -472,20 +498,24 @@ let VideoPlayerImpl = cc.Class({
             this._updateSize(this._w, this._h);
         }
 
-        let appx = (w * _mat4_temp.m00) * node._anchorPoint.x;
-        let appy = (h * _mat4_temp.m05) * node._anchorPoint.y;
+        let appx = (w * _mat4_tempm[0]) * node._anchorPoint.x;
+        let appy = (h * _mat4_tempm[5]) * node._anchorPoint.y;
 
-        let viewport = cc.view._viewportRect;
-        offsetX += viewport.x / dpr;
-        offsetY += viewport.y / dpr;
 
-        let tx = _mat4_temp.m12 * scaleX - appx + offsetX, ty = _mat4_temp.m13 * scaleY - appy + offsetY;
+        let tx = _mat4_tempm[12] * scaleX - appx + offsetX, ty = _mat4_tempm[13] * scaleY - appy + offsetY;
 
         let matrix = "matrix(" + a + "," + -b + "," + -c + "," + d + "," + tx + "," + -ty + ")";
         this._video.style['transform'] = matrix;
         this._video.style['-webkit-transform'] = matrix;
         this._video.style['transform-origin'] = '0px 100% 0px';
         this._video.style['-webkit-transform-origin'] = '0px 100% 0px';
+
+        // TODO: move into web adapter
+        // video style would change when enter fullscreen on IE
+        // there is no way to add fullscreenchange event listeners on IE so that we can restore the cached video style
+        if (sys.browserType !== sys.BROWSER_TYPE_IE) {
+            this._forceUpdate = false;
+        }
     }
 });
 
@@ -541,19 +571,21 @@ VideoPlayerImpl._polyfill = {
  * But native does not support this encode,
  * so it is best to provide mp4 and webm or ogv file
  */
-// TODO: move into adapter
-const isXiaomiGame = (cc.sys.platform === cc.sys.XIAOMI_GAME);
-const isBaiduGame = (cc.sys.platform === cc.sys.BAIDU_GAME);
+
+// TODO: adapt wx video player
+// issue: https://github.com/cocos-creator/2d-tasks/issues/1364
 let dom = document.createElement("video");
-if (!CC_WECHATGAME && !isBaiduGame && !isXiaomiGame) {
+if (dom.canPlayType) {
     if (dom.canPlayType("video/ogg")) {
         VideoPlayerImpl._polyfill.canPlayType.push(".ogg");
         VideoPlayerImpl._polyfill.canPlayType.push(".ogv");
     }
-    if (dom.canPlayType("video/mp4"))
+    if (dom.canPlayType("video/mp4")) {
         VideoPlayerImpl._polyfill.canPlayType.push(".mp4");
-    if (dom.canPlayType("video/webm"))
+    }
+    if (dom.canPlayType("video/webm")) {
         VideoPlayerImpl._polyfill.canPlayType.push(".webm");
+    }
 }
 
 if (sys.browserType === sys.BROWSER_TYPE_FIREFOX) {

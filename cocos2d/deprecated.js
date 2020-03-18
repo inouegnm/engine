@@ -173,6 +173,36 @@ if (CC_DEBUG) {
         cc.errorID(1404);
     });
 
+    // cc.vmath
+    js.get(cc, 'vmath', function () {
+        cc.warnID(1400, 'cc.vmath', 'cc.math');
+        return cc.math;
+    });
+    js.get(cc.math, 'vec2', function () {
+        cc.warnID(1400, 'cc.vmath.vec2', 'cc.Vec2');
+        return cc.Vec2;
+    })
+    js.get(cc.math, 'vec3', function () {
+        cc.warnID(1400, 'cc.vmath.vec3', 'cc.Vec3');
+        return cc.Vec3;
+    })
+    js.get(cc.math, 'vec4', function () {
+        cc.warnID(1400, 'cc.vmath.vec4', 'cc.Vec4');
+        return cc.Vec4;
+    })
+    js.get(cc.math, 'mat4', function () {
+        cc.warnID(1400, 'cc.vmath.mat4', 'cc.Mat4');
+        return cc.Mat4;
+    })
+    js.get(cc.math, 'mat3', function () {
+        cc.warnID(1400, 'cc.vmath.mat3', 'cc.Mat3');
+        return cc.Mat3;
+    })
+    js.get(cc.math, 'quat', function () {
+        cc.warnID(1400, 'cc.vmath.quat', 'cc.Quat');
+        return cc.Quat;
+    })
+
     // SpriteFrame
     js.get(cc.SpriteFrame.prototype, '_textureLoaded', function () {
         cc.errorID(1400, 'spriteFrame._textureLoaded', 'spriteFrame.textureLoaded()');
@@ -274,6 +304,8 @@ if (CC_DEBUG) {
         setAnimationInterval: 'cc.game.setFrameRate',
         isDisplayStats: 'cc.debug.isDisplayStats',
         setDisplayStats: 'cc.debug.setDisplayStats',
+        stopAnimation: 'cc.game.pause',
+        startAnimation: 'cc.game.resume',
     }, 'cc.Director');
     markAsRemoved(cc.Director, [
         'pushScene',
@@ -359,12 +391,6 @@ if (CC_DEBUG) {
         '_sgNode',
     ]);
 
-    markAsDeprecated(cc.Node, [
-        ['rotationX', 'eulerAngles'],
-        ['rotationY', 'eulerAngles'],
-        ['rotation', 'angle'],
-    ]);
-
     markFunctionWarning(cc.Node.prototype, {
         getNodeToParentTransform: 'getLocalMatrix',
         getNodeToParentTransformAR: 'getLocalMatrix',
@@ -372,8 +398,10 @@ if (CC_DEBUG) {
         getNodeToWorldTransformAR: 'getWorldMatrix',
         getParentToNodeTransform: 'getLocalMatrix',
         getWorldToNodeTransform: 'getWorldMatrix',
-        convertTouchToNodeSpace: 'convertToNodeSpace',
+        convertTouchToNodeSpace: 'convertToNodeSpaceAR',
         convertTouchToNodeSpaceAR: 'convertToNodeSpaceAR',
+        convertToWorldSpace: 'convertToWorldSpaceAR',
+        convertToNodeSpace: 'convertToNodeSpaceAR'
     });
 
     provideClearError(cc.Node.prototype, {
@@ -413,9 +441,30 @@ if (CC_DEBUG) {
         setInsetBottom: 'cc.SpriteFrame insetBottom',
     });
 
+    // cc.Material
+    cc.Material.getInstantiatedBuiltinMaterial = cc.MaterialVariant.createWithBuiltin;
+    cc.Material.getInstantiatedMaterial = cc.MaterialVariant.create;
+    markFunctionWarning(cc.Material, {
+        getInstantiatedBuiltinMaterial: 'cc.MaterialVariant.createWithBuiltin',
+        getInstantiatedMaterial: 'cc.MaterialVariant.create'
+    })
+
+    // cc.RenderComponent
+    cc.js.getset(cc.RenderComponent.prototype, 'sharedMaterials', function () {
+        cc.warnID(1400, 'sharedMaterials', 'getMaterials');
+        return this.materials;
+    }, function (v) {
+        cc.warnID(1400, 'sharedMaterials', 'setMaterial');
+        this.materials = v;
+    })
+
     // cc.Camera
     markFunctionWarning(cc.Camera.prototype, {
-        getNodeToCameraTransform: 'getWorldToCameraMatrix'
+        getNodeToCameraTransform: 'getWorldToScreenMatrix2D',
+        getCameraToWorldPoint: 'getScreenToWorldPoint',
+        getWorldToCameraPoint: 'getWorldToScreenPoint',
+        getCameraToWorldMatrix: 'getScreenToWorldMatrix2D',
+        getWorldToCameraMatrix: 'getWorldToScreenMatrix2D'
     });
 
     markAsRemoved(cc.Camera, [
@@ -459,6 +508,11 @@ if (CC_DEBUG) {
             }
         },
     });
+
+    // cc.dynamicAtlasManager
+    markAsRemovedInObject(cc.dynamicAtlasManager, [
+        'minFrameSize'
+    ], 'cc.dynamicAtlasManager')
 
     // Value types
     provideClearError(cc, {
@@ -550,7 +604,6 @@ if (CC_DEBUG) {
         _getError: 'cc.debug.getError',
         _initDebugSetting: 'cc.debug._resetDebugSetting',
         DebugMode: 'cc.debug.DebugMode',
-        BlendFunc: 'cc.macro.BlendFactor',
     }, 'cc');
     markAsRemovedInObject(cc, [
         'blendFuncDisable',
@@ -620,12 +673,6 @@ if (CC_DEBUG) {
         return cc.easing;
     });
 
-    // cc.pool
-    js.get(cc, 'pool', function () {
-        cc.errorID(1407);
-        return js.Pool;
-    });
-
     // cc.isChildClassOf
     js.get(cc, 'isChildClassOf', function () {
         cc.errorID(1400, 'cc.isChildClassOf', 'cc.js.isChildClassOf');
@@ -644,7 +691,7 @@ if (CC_DEBUG) {
             return cc.gfx;
         },
         get math () {
-            cc.warnID(1400, 'cc.renderer.renderEngine.math', 'cc.vmath');
+            cc.warnID(1400, 'cc.renderer.renderEngine.math', 'cc.math');
             return cc.vmath;
         },
         get InputAssembler () {
@@ -652,4 +699,5 @@ if (CC_DEBUG) {
             return cc.renderer.InputAssembler;
         }
     };
+    
 }

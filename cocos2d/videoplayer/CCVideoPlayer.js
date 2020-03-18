@@ -233,13 +233,15 @@ let VideoPlayer = cc.Class({
          * !#en Whether keep the aspect ration of the original video.
          * !#zh 是否保持视频原来的宽高比
          * @property {Boolean} keepAspectRatio
+         * @type {Boolean}
+         * @default true
          */
         keepAspectRatio: {
             tooltip: CC_DEV && 'i18n:COMPONENT.videoplayer.keepAspectRatio',
             default: true,
             type: cc.Boolean,
             notify: function () {
-                this._impl.setKeepAspectRatioEnabled(this.keepAspectRatio);
+                this._impl && this._impl.setKeepAspectRatioEnabled(this.keepAspectRatio);
             }
         },
 
@@ -247,14 +249,48 @@ let VideoPlayer = cc.Class({
          * !#en Whether play video in fullscreen mode.
          * !#zh 是否全屏播放视频
          * @property {Boolean} isFullscreen
+         * @type {Boolean}
+         * @default false
          */
-        isFullscreen: {
-            tooltip: CC_DEV && 'i18n:COMPONENT.videoplayer.isFullscreen',
+        _isFullscreen: {
             default: false,
-            type: cc.Boolean,
-            notify: function () {
-                this._impl.setFullScreenEnabled(this.isFullscreen);
-            }
+            formerlySerializedAs: '_N$isFullscreen',
+        },
+        isFullscreen: {
+            get () {
+                if (!CC_EDITOR) {
+                    this._isFullscreen = this._impl && this._impl.isFullScreenEnabled();
+                }
+                return this._isFullscreen;
+            },
+            set (enable) {
+                this._isFullscreen = enable;
+                if (!CC_EDITOR) {
+                    this._impl && this._impl.setFullScreenEnabled(enable);
+                }
+            },
+            animatable: false,
+            tooltip: CC_DEV && 'i18n:COMPONENT.videoplayer.isFullscreen'
+        },
+
+        /**
+         * !#en Always below the game view (only useful on Web. Note: The specific effects are not guaranteed to be consistent, depending on whether each browser supports or restricts).
+         * !#zh 永远在游戏视图最底层（这个属性只有在 Web 平台上有效果。注意：具体效果无法保证一致，跟各个浏览器是否支持与限制有关）
+         * @property {Boolean} stayOnBottom
+         */
+        _stayOnBottom: false,
+        stayOnBottom: {
+            get () {
+                return this._stayOnBottom
+            },
+            set (enable) {
+                this._stayOnBottom = enable;
+                if (this._impl) {
+                    this._impl.setStayOnBottom(enable);
+                }
+            },
+            animatable: false,
+            tooltip: CC_DEV && 'i18n:COMPONENT.videoplayer.stayOnBottom',
         },
 
         /**
@@ -298,20 +334,21 @@ let VideoPlayer = cc.Class({
             url = cc.loader.md5Pipe.transformURL(url);
         }
         this._impl.setURL(url, this._mute || this._volume === 0);
+        this._impl.setKeepAspectRatioEnabled(this.keepAspectRatio);
     },
 
     onLoad () {
         let impl = this._impl;
         if (impl) {
             impl.createDomElementIfNeeded(this._mute || this._volume === 0);
+            impl.setStayOnBottom(this._stayOnBottom);
             this._updateVideoSource();
 
-            impl.seekTo(this.currentTime);
-            impl.setKeepAspectRatioEnabled(this.keepAspectRatio);
-            impl.setFullScreenEnabled(this.isFullscreen);
-            this.pause();
-
             if (!CC_EDITOR) {
+                impl.seekTo(this.currentTime);
+                impl.setFullScreenEnabled(this._isFullscreen);
+                this.pause();
+
                 impl.setEventListener(EventType.PLAYING, this.onPlaying.bind(this));
                 impl.setEventListener(EventType.PAUSED, this.onPasued.bind(this));
                 impl.setEventListener(EventType.STOPPED, this.onStopped.bind(this));

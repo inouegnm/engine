@@ -97,7 +97,16 @@ var SystemEvent = cc.Class({
         if (CC_EDITOR) {
             return;
         }
-        inputManger.setAccelerometerEnabled(isEnable);
+
+        // for iOS 13+
+        if (isEnable && window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') {
+            DeviceMotionEvent.requestPermission().then(response => {
+                console.log(`Device Motion Event request permission: ${response}`);
+                inputManger.setAccelerometerEnabled(response === 'granted');
+            });
+        } else {
+            inputManger.setAccelerometerEnabled(isEnable);
+        }
     },
 
     /**
@@ -113,11 +122,11 @@ var SystemEvent = cc.Class({
         inputManger.setAccelerometerInterval(interval);
     },
 
-    on: function (type, callback, target) {
+    on: function (type, callback, target, once) {
         if (CC_EDITOR) {
             return;
         }
-        this._super(type, callback, target);
+        this._super(type, callback, target, once);
 
         // Keyboard
         if (type === EventType.KEY_DOWN || type === EventType.KEY_UP) {

@@ -55,6 +55,38 @@ const DEFAULT_MODULE_CACHE = {
     'cc.PrefabInfo': false
 };
 
+try {
+    // compatible for IE
+    !Float32Array.name && (Float32Array.name = 'Float32Array');
+    !Float64Array.name && (Float64Array.name = 'Float64Array');
+
+    !Int8Array.name && (Int8Array.name = 'Int8Array');
+    !Int16Array.name && (Int16Array.name = 'Int16Array');
+    !Int32Array.name && (Int32Array.name = 'Int32Array');
+
+    !Uint8Array.name && (Uint8Array.name = 'Uint8Array');
+    !Uint16Array.name && (Uint16Array.name = 'Uint16Array');
+    !Uint32Array.name && (Uint32Array.name = 'Uint32Array');
+}
+catch (e) {}
+
+// compatible for iOS 9
+function getTypedArrayName (constructor) {
+    if (constructor === Float32Array) { return 'Float32Array'; }
+    else if (constructor === Float64Array) { return 'Float64Array'; }
+
+    else if (constructor === Int8Array) { return 'Int8Array'; }
+    else if (constructor === Int16Array) { return 'Int16Array'; }
+    else if (constructor === Int32Array) { return 'Int32Array'; }
+
+    else if (constructor === Uint8Array) { return 'Uint8Array'; }
+    else if (constructor === Uint16Array) { return 'Uint16Array'; }
+    else if (constructor === Uint32Array) { return 'Uint32Array'; }
+    else {
+        throw new Error(`Unknown TypedArray could not be instantiated: ${constructor}`);
+    }
+}
+
 // HELPER CLASSES
 
 // ('foo', 'bar')
@@ -362,6 +394,32 @@ proto.instantiateArray = function (value) {
     return codeArray;
 };
 
+proto.instantiateTypedArray = function (value) {
+    let type = value.constructor.name || getTypedArrayName(value.constructor);
+    if (value.length === 0) {
+        return 'new ' + type;
+    }
+
+    let arrayVar = LOCAL_ARRAY + (++this.localVariableId);
+    let declaration = new Declaration(arrayVar, 'new ' + type + '(' + value.length + ')');
+    let codeArray = [declaration];
+
+    // assign a _iN$t flag to indicate that this object has been parsed.
+    value._iN$t = {
+        globalVar: '',      // the name of declared global variable used to access this object
+        source: codeArray,  // the source code array for this object
+    };
+    this.objsToClear_iN$t.push(value);
+
+    for (var i = 0; i < value.length; ++i) {
+        if (value[i] !== 0) {
+            var statement = arrayVar + '[' + i + ']=';
+            writeAssignment(codeArray, statement, value[i]);
+        }
+    }
+    return codeArray;
+};
+
 proto.enumerateField = function (obj, key, value) {
     if (typeof value === 'object' && value) {
         var _iN$t = value._iN$t;
@@ -382,6 +440,9 @@ proto.enumerateField = function (obj, key, value) {
                 // }
             }
             return globalVar;
+        }
+        else if (ArrayBuffer.isView(value)) {
+            return this.instantiateTypedArray(value);
         }
         else if (Array.isArray(value)) {
             return this.instantiateArray(value);

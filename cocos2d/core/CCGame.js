@@ -28,7 +28,6 @@ var EventTarget = require('./event/event-target');
 require('../audio/CCAudioEngine');
 const debug = require('./CCDebug');
 const renderer = require('./renderer/index.js');
-const inputManager = CC_QQPLAY ? require('./platform/BKInputManager') : require('./platform/CCInputManager');
 const dynamicAtlasManager = require('../core/renderer/utils/dynamic-atlas/manager');
 
 /**
@@ -294,8 +293,6 @@ var game = {
         if (cc.audioEngine) {
             cc.audioEngine._break();
         }
-        // Pause animation
-        cc.director.stopAnimation();
         // Pause main loop
         if (this._intervalId)
             window.cancelAnimFrame(this._intervalId);
@@ -315,8 +312,7 @@ var game = {
         if (cc.audioEngine) {
             cc.audioEngine._restore();
         }
-        // Resume animation
-        cc.director.startAnimation();
+        cc.director._resetDeltaTime();
         // Resume main loop
         this._runMainLoop();
     },
@@ -386,21 +382,24 @@ var game = {
         this.emit(this.EVENT_ENGINE_INITED);
     },
 
-    _prepareFinished (cb) {
-
-        if (CC_PREVIEW && window.__modular) {
-            window.__modular.run();
+    _loadPreviewScript (cb) {
+        if (CC_PREVIEW && window.__quick_compile_project__) {
+            window.__quick_compile_project__.load(cb);
         }
+        else {
+            cb();
+        }
+    },
 
-        this._prepared = true;
-
+    _prepareFinished (cb) {
         // Init engine
         this._initEngine();
+        
+        this._setAnimFrame();
         cc.AssetLibrary._loadBuiltins(() => {
             // Log engine version
             console.log('Cocos Creator v' + cc.ENGINE_VERSION);
-
-            this._setAnimFrame();
+            this._prepared = true;
             this._runMainLoop();
 
             this.emit(this.EVENT_GAME_INITED);
@@ -433,14 +432,14 @@ var game = {
      * @typescript
      * on<T extends Function>(type: string, callback: T, target?: any, useCapture?: boolean): T
      */
-    on (type, callback, target) {
+    on (type, callback, target, once) {
         // Make sure EVENT_ENGINE_INITED and EVENT_GAME_INITED callbacks to be invoked
         if ((this._prepared && type === this.EVENT_ENGINE_INITED) ||
             (!this._paused && type === this.EVENT_GAME_INITED)) {
             callback.call(target);
         }
         else {
-            this.eventTargetOn(type, callback, target);
+            this.eventTargetOn(type, callback, target, once);
         }
     },
     /**
@@ -488,14 +487,18 @@ var game = {
         // Load game scripts
         let jsList = this.config.jsList;
         if (jsList && jsList.length > 0) {
-            var self = this;
-            cc.loader.load(jsList, function (err) {
+            cc.loader.load(jsList, (err) => {
                 if (err) throw new Error(JSON.stringify(err));
-                self._prepareFinished(cb);
+
+                this._loadPreviewScript(() => {
+                    this._prepareFinished(cb);
+                })
             });
         }
         else {
-            this._prepareFinished(cb);
+            this._loadPreviewScript(() => {
+                this._prepareFinished(cb);
+            })
         }
     },
 
@@ -581,7 +584,7 @@ var game = {
         this._lastTime = performance.now();
         var frameRate = game.config.frameRate;
         this._frameTime = 1000 / frameRate;
-
+        cc.director._maxParticleDeltaTime = this._frameTime / 1000 * 2;
         if (CC_JSB || CC_RUNTIME) {
             jsb.setPreferredFramesPerSecond(frameRate);
             window.requestAnimFrame = window.requestAnimationFrame;
@@ -626,6 +629,11 @@ var game = {
     },
     //Run game.
     _runMainLoop: function () {
+        if (CC_EDITOR) {
+            return;
+        }
+        if (!this._prepared) return;
+
         var self = this, callback, config = self.config,
             director = cc.director,
             skip = true, frameRate = config.frameRate;
@@ -665,7 +673,12 @@ var game = {
         if (typeof config.registerSystemEvent !== 'boolean') {
             config.registerSystemEvent = true;
         }
-        config.showFPS = !!config.showFPS;
+        if (renderMode === 1) {
+            config.showFPS = false;    
+        }
+        else {
+            config.showFPS = !!config.showFPS;
+        }
 
         // Scene parser
         this._sceneInfos = config.scenes || [];
@@ -720,24 +733,11 @@ var game = {
             width, height,
             localCanvas, localContainer;
 
-        if (CC_WECHATGAME || CC_JSB || CC_RUNTIME) {
+        if (CC_JSB || CC_RUNTIME) {
             this.container = localContainer = document.createElement("DIV");
             this.frame = localContainer.parentNode === document.body ? document.documentElement : localContainer.parentNode;
-            if (cc.sys.browserType === cc.sys.BROWSER_TYPE_WECHAT_GAME_SUB) {
-                localCanvas = window.sharedCanvas || wx.getSharedCanvas();
-            }
-            else if (CC_JSB || CC_RUNTIME) {
-                localCanvas = window.__canvas;
-            }
-            else {
-                localCanvas = canvas;
-            }
+            localCanvas = window.__canvas;
             this.canvas = localCanvas;
-        }
-        else if (CC_QQPLAY) {
-            this.container = document.createElement("DIV");
-            this.frame = document.documentElement;
-            this.canvas = localCanvas = canvas;
         }
         else {
             var element = (el instanceof HTMLElement) ? el : (document.querySelector(el) || document.querySelector('#' + el));
@@ -790,9 +790,6 @@ var game = {
                 'antialias': cc.macro.ENABLE_WEBGL_ANTIALIAS,
                 'alpha': cc.macro.ENABLE_TRANSPARENT_CANVAS
             };
-            if (CC_QQPLAY) {
-                opts['preserveDrawingBuffer'] = true;
-            }
             renderer.initWebGL(localCanvas, opts);
             this._renderContext = renderer.device._gl;
             
@@ -820,7 +817,7 @@ var game = {
 
         // register system events
         if (this.config.registerSystemEvent)
-            inputManager.registerSystemEvent(this.canvas);
+            cc.internal.inputManager.registerSystemEvent(this.canvas);
 
         if (typeof document.hidden !== 'undefined') {
             hiddenPropName = "hidden";
@@ -874,11 +871,6 @@ var game = {
 
         if (navigator.userAgent.indexOf("MicroMessenger") > -1) {
             win.onfocus = onShown;
-        }
-
-        if (CC_WECHATGAME && cc.sys.browserType !== cc.sys.BROWSER_TYPE_WECHAT_GAME_SUB) {
-            wx.onShow && wx.onShow(onShown);
-            wx.onHide && wx.onHide(onHidden);
         }
 
         if ("onpageshow" in window && "onpagehide" in window) {

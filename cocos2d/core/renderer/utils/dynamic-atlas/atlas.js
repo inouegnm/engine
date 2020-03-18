@@ -18,6 +18,8 @@ function Atlas (width, height) {
 
     this._innerTextureInfos = {};
     this._innerSpriteFrames = [];
+
+    this._count = 0;
 }
 
 Atlas.DEFAULT_HASH = (new RenderTexture())._getHash();
@@ -42,7 +44,7 @@ cc.js.mixin(Atlas.prototype, {
                 this._y = this._nexty;
             }
 
-            if ((this._y + height) > this._nexty) {
+            if ((this._y + height + space) > this._nexty) {
                 this._nexty = this._y + height + space;
             }
 
@@ -51,10 +53,21 @@ cc.js.mixin(Atlas.prototype, {
             }
 
             // texture bleeding
-            this._texture.drawTextureAt(texture, this._x-1, this._y);
-            this._texture.drawTextureAt(texture, this._x+1, this._y);
-            this._texture.drawTextureAt(texture, this._x, this._y-1);
-            this._texture.drawTextureAt(texture, this._x, this._y+1);
+            if (cc.dynamicAtlasManager.textureBleeding) {
+                // Smaller frame is more likely to be affected by linear filter
+                if (width <= 8 || height <= 8) {
+                    this._texture.drawTextureAt(texture, this._x-1, this._y-1);
+                    this._texture.drawTextureAt(texture, this._x-1, this._y+1);
+                    this._texture.drawTextureAt(texture, this._x+1, this._y-1);
+                    this._texture.drawTextureAt(texture, this._x+1, this._y+1);
+                }
+
+                this._texture.drawTextureAt(texture, this._x-1, this._y);
+                this._texture.drawTextureAt(texture, this._x+1, this._y);
+                this._texture.drawTextureAt(texture, this._x, this._y-1);
+                this._texture.drawTextureAt(texture, this._x, this._y+1);
+            }
+
             this._texture.drawTextureAt(texture, this._x, this._y);
 
             this._innerTextureInfos[texture._id] = {
@@ -62,6 +75,8 @@ cc.js.mixin(Atlas.prototype, {
                 y: this._y,
                 texture: texture
             };
+
+            this._count++;
 
             sx += this._x;
             sy += this._y;
@@ -88,6 +103,17 @@ cc.js.mixin(Atlas.prototype, {
         this._dirty = false;
     },
 
+    deleteInnerTexture (texture) {
+        if (texture && this._innerTextureInfos[texture._id]) {
+            delete this._innerTextureInfos[texture._id];
+            this._count--;
+        }
+    },
+
+    isEmpty () {
+        return this._count <= 0;
+    },
+    
     reset () {
         this._x = space;
         this._y = space;

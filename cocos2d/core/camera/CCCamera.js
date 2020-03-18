@@ -24,25 +24,27 @@
  THE SOFTWARE.
  ****************************************************************************/
 
+import { Mat4, Vec2, Vec3 } from '../value-types';
+import { Ray } from '../geom-utils';
+
 const AffineTrans = require('../utils/affine-transform');
 const renderer = require('../renderer/index');
 const RenderFlow = require('../renderer/render-flow');
 const game = require('../CCGame');
 
-import geomUtils from '../geom-utils';
-import RendererCamera from '../../renderer/scene/camera';
-import View from '../../renderer/core/view';
+let RendererCamera = null;
+if (CC_JSB && CC_NATIVERENDERER) {
+    RendererCamera = window.renderer.Camera;
+} else {
+    RendererCamera = require('../../renderer/scene/camera');
+}
 
-const mat4 = cc.vmath.mat4;
-const vec2 = cc.vmath.vec2;
-const vec3 = cc.vmath.vec3;
+let _mat4_temp_1 = cc.mat4();
+let _mat4_temp_2 = cc.mat4();
 
-let _mat4_temp_1 = mat4.create();
-let _mat4_temp_2 = mat4.create();
-
-let _v3_temp_1 = vec3.create();
-let _v3_temp_2 = vec3.create();
-let _v3_temp_3 = vec3.create();
+let _v3_temp_1 = cc.v3();
+let _v3_temp_2 = cc.v3();
+let _v3_temp_3 = cc.v3();
 
 let _cameras = [];
 
@@ -65,14 +67,26 @@ function repositionDebugCamera () {
  */
 let ClearFlags = cc.Enum({
     /**
+     * !#en
+     * Clear the background color.
+     * !#zh
+     * 清除背景颜色
      * @property COLOR
      */
     COLOR: 1,
     /**
+     * !#en
+     * Clear the depth buffer.
+     * !#zh
+     * 清除深度缓冲区
      * @property DEPTH
      */
     DEPTH: 2,
     /**
+     * !#en
+     * Clear the stencil.
+     * !#zh
+     * 清除模板缓冲区
      * @property STENCIL
      */
     STENCIL: 4,
@@ -130,17 +144,18 @@ let Camera = cc.Class({
         _targetTexture: null,
         _fov: 60,
         _orthoSize: 10,
-        _nearClip: 0.1,
+        _nearClip: 1,
         _farClip: 4096,
         _ortho: true,
         _rect: cc.rect(0, 0, 1, 1),
         _renderStages: 1,
+        _alignWithScreen: true,
 
         /**
          * !#en
-         * The camera zoom ratio.
+         * The camera zoom ratio, only support 2D camera.
          * !#zh
-         * 摄像机缩放比率
+         * 摄像机缩放比率, 只支持 2D camera。
          * @property {Number} zoomRatio
          */
         zoomRatio: {
@@ -149,7 +164,8 @@ let Camera = cc.Class({
             },
             set (value) {
                 this._zoomRatio = value;
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.zoomRatio',
         },
 
         /**
@@ -166,7 +182,8 @@ let Camera = cc.Class({
             },
             set (v) {
                 this._fov = v;
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.fov',
         },
 
         /**
@@ -183,7 +200,8 @@ let Camera = cc.Class({
             },
             set (v) {
                 this._orthoSize = v;
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.orthoSize',
         },
 
         /**
@@ -201,7 +219,8 @@ let Camera = cc.Class({
             set (v) {
                 this._nearClip = v;
                 this._updateClippingpPlanes();
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.nearClip',
         },
 
         /**
@@ -219,7 +238,8 @@ let Camera = cc.Class({
             set (v) {
                 this._farClip = v;
                 this._updateClippingpPlanes();
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.farClip',
         },
 
         /**
@@ -237,14 +257,15 @@ let Camera = cc.Class({
             set (v) {
                 this._ortho = v;
                 this._updateProjection();
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.ortho',
         },
 
         /**
          * !#en
-         * Four values (0-1) that indicate where on the screen this camera view will be drawn.
+         * Four values (0 ~ 1) that indicate where on the screen this camera view will be drawn.
          * !#zh
-         * 决定摄像机绘制在屏幕上哪个位置，值为 0-1。
+         * 决定摄像机绘制在屏幕上哪个位置，值为（0 ~ 1）。
          * @property {Rect} rect
          * @default cc.rect(0,0,1,1)
          */
@@ -255,7 +276,8 @@ let Camera = cc.Class({
             set (v) {
                 this._rect = v;
                 this._updateRect();
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.rect',
         },
 
         /**
@@ -272,7 +294,8 @@ let Camera = cc.Class({
             set (value) {
                 this._cullingMask = value;
                 this._updateCameraMask();
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.cullingMask',
         },
 
         /**
@@ -291,7 +314,8 @@ let Camera = cc.Class({
                 if (this._camera) {
                     this._camera.setClearFlags(value);
                 }
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.clearFlags',
         },
 
         /**
@@ -308,7 +332,8 @@ let Camera = cc.Class({
             set (value) {
                 this._backgroundColor = value;
                 this._updateBackgroundColor();
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.backgroundColor',
         },
 
         /**
@@ -325,9 +350,10 @@ let Camera = cc.Class({
             set (value) {
                 this._depth = value;
                 if (this._camera) {
-                    this._camera._priority = value;
+                    this._camera.setPriority(value);
                 }
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.depth',
         },
 
         /**
@@ -346,9 +372,17 @@ let Camera = cc.Class({
             set (value) {
                 this._targetTexture = value;
                 this._updateTargetTexture();
-            }
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.targetTexture',
         },
 
+        /**
+         * !#en
+         * Sets the camera's render stages.
+         * !#zh
+         * 设置摄像机渲染的阶段
+         * @property {Number} renderStages
+         */
         renderStages: {
             get () {
                 return this._renderStages;
@@ -356,6 +390,21 @@ let Camera = cc.Class({
             set (val) {
                 this._renderStages = val;
                 this._updateStages();
+            },
+            tooltip: CC_DEV && 'i18n:COMPONENT.camera.renderStages',
+        },
+
+        /**
+         * !#en Whether auto align camera viewport to screen
+         * !#zh 是否自动将摄像机的视口对准屏幕
+         * @property {Boolean} alignWithScreen
+         */
+        alignWithScreen: {
+            get () {
+                return this._alignWithScreen;
+            },
+            set (v) {
+                this._alignWithScreen = v;
             }
         },
 
@@ -436,8 +485,8 @@ let Camera = cc.Class({
 
             camera.dirty = true;
 
-            camera._cullingMask = 1 << cc.Node.BuiltinGroupIndex.DEBUG;
-            camera._priority = cc.macro.MAX_ZINDEX;
+            camera.cullingMask = 1 << cc.Node.BuiltinGroupIndex.DEBUG;
+            camera.setPriority(cc.macro.MAX_ZINDEX);
             camera.setClearFlags(0);
             camera.setColor(0, 0, 0, 0);
 
@@ -454,7 +503,7 @@ let Camera = cc.Class({
     _updateCameraMask () {
         if (this._camera) {
             let mask = this._cullingMask & (~(1 << cc.Node.BuiltinGroupIndex.DEBUG));
-            this._camera._cullingMask = mask;
+            this._camera.cullingMask = mask;
         }
     },
 
@@ -474,7 +523,7 @@ let Camera = cc.Class({
         if (!this._camera) return;
 
         let texture = this._targetTexture;
-        this._camera._framebuffer = texture ? texture._framebuffer : null;
+        this._camera.setFrameBuffer(texture ? texture._framebuffer : null);
     },
 
     _updateClippingpPlanes () {
@@ -491,19 +540,20 @@ let Camera = cc.Class({
 
     _updateRect () {
         if (!this._camera) return;
-        this._camera.setRect(this._rect);
+        let rect = this._rect;
+        this._camera.setRect(rect.x, rect.y, rect.width, rect.height);
     },
 
     _updateStages () {
         let flags = this._renderStages;
-        let stages = this._camera._stages;
-        stages.length = 0;
+        let stages = [];
         if (flags & StageFlags.OPAQUE) {
             stages.push('opaque');
         }
         if (flags & StageFlags.TRANSPARENT) {
             stages.push('transparent');
         }
+        this._camera.setStages(stages);
     },
 
     _init () {
@@ -514,13 +564,15 @@ let Camera = cc.Class({
         if (!camera) return;
         camera.setNode(this.node);
         camera.setClearFlags(this._clearFlags);
-        camera._priority = this._depth;
+        camera.setPriority(this._depth);
         this._updateBackgroundColor();
         this._updateCameraMask();
         this._updateTargetTexture();
         this._updateClippingpPlanes();
         this._updateProjection();
         this._updateStages();
+        this._updateRect();
+        this.beforeDraw();
     },
 
     onLoad () {
@@ -545,102 +597,95 @@ let Camera = cc.Class({
 
     /**
      * !#en
-     * Returns the matrix that transform the node's (local) space coordinates into the camera's space coordinates.
+     * Get the screen to world matrix, only support 2D camera which alignWithScreen is true.
      * !#zh
-     * 返回一个将节点坐标系转换到摄像机坐标系下的矩阵
-     * @method getNodeToCameraTransform
-     * @param {Node} node - the node which should transform
-     * @return {AffineTransform}
-     */
-    getNodeToCameraTransform (node) {
-        let out = AffineTrans.identity();
-        node.getWorldMatrix(_mat4_temp_2);
-        if (this.containsNode(node)) {
-            this.getWorldToCameraMatrix(_mat4_temp_1);
-            mat4.mul(_mat4_temp_2, _mat4_temp_2, _mat4_temp_1);
-        }
-        AffineTrans.fromMat4(out, _mat4_temp_2);
-        return out;
-    },
-
-    /**
-     * !#en
-     * Conver a camera coordinates point to world coordinates.
-     * !#zh
-     * 将一个摄像机坐标系下的点转换到世界坐标系下。
-     * @method getCameraToWorldPoint
-     * @param {Vec2} point - the point which should transform
-     * @param {Vec2} out - the point to receive the result
-     * @return {Vec2}
-     */
-    getCameraToWorldPoint (point, out) {
-        out = out || cc.v2();
-        this.getCameraToWorldMatrix(_mat4_temp_1);
-        vec2.transformMat4(out, point, _mat4_temp_1);
-        return out;
-    },
-
-    /**
-     * !#en
-     * Conver a world coordinates point to camera coordinates.
-     * !#zh
-     * 将一个世界坐标系下的点转换到摄像机坐标系下。
-     * @method getWorldToCameraPoint
-     * @param {Vec2} point 
-     * @param {Vec2} out - the point to receive the result
-     * @return {Vec2}
-     */
-    getWorldToCameraPoint (point, out) {
-        out = out || cc.v2();
-        this.getWorldToCameraMatrix(_mat4_temp_1);
-        vec2.transformMat4(out, point, _mat4_temp_1);
-        return out;
-    },
-
-    /**
-     * !#en
-     * Get the camera to world matrix
-     * !#zh
-     * 获取摄像机坐标系到世界坐标系的矩阵
-     * @method getCameraToWorldMatrix
+     * 获取屏幕坐标系到世界坐标系的矩阵，只适用于 alignWithScreen 为 true 的 2D 摄像机。
+     * @method getScreenToWorldMatrix2D
      * @param {Mat4} out - the matrix to receive the result
-     * @return {Mat4}
+     * @return {Mat4} out
      */
-    getCameraToWorldMatrix (out) {
-        this.getWorldToCameraMatrix(out);
-        mat4.invert(out, out);
+    getScreenToWorldMatrix2D (out) {
+        this.getWorldToScreenMatrix2D(out);
+        Mat4.invert(out, out);
         return out;
     },
 
-
     /**
      * !#en
-     * Get the world to camera matrix
+     * Get the world to camera matrix, only support 2D camera which alignWithScreen is true.
      * !#zh
-     * 获取世界坐标系到摄像机坐标系的矩阵
-     * @method getWorldToCameraMatrix
+     * 获取世界坐标系到摄像机坐标系的矩阵，只适用于 alignWithScreen 为 true 的 2D 摄像机。
+     * @method getWorldToScreenMatrix2D
      * @param {Mat4} out - the matrix to receive the result
-     * @return {Mat4}
+     * @return {Mat4} out
      */
-    getWorldToCameraMatrix (out) {
+    getWorldToScreenMatrix2D (out) {
         this.node.getWorldRT(_mat4_temp_1);
 
         let zoomRatio = this.zoomRatio;
-        _mat4_temp_1.m00 *= zoomRatio;
-        _mat4_temp_1.m01 *= zoomRatio;
-        _mat4_temp_1.m04 *= zoomRatio;
-        _mat4_temp_1.m05 *= zoomRatio;
+        let _mat4_temp_1m = _mat4_temp_1.m;
+        _mat4_temp_1m[0] *= zoomRatio;
+        _mat4_temp_1m[1] *= zoomRatio;
+        _mat4_temp_1m[4] *= zoomRatio;
+        _mat4_temp_1m[5] *= zoomRatio;
 
-        let m12 = _mat4_temp_1.m12;
-        let m13 = _mat4_temp_1.m13;
+        let m12 = _mat4_temp_1m[12];
+        let m13 = _mat4_temp_1m[13];
 
         let center = cc.visibleRect.center;
-        _mat4_temp_1.m12 = center.x - (_mat4_temp_1.m00 * m12 + _mat4_temp_1.m04 * m13);
-        _mat4_temp_1.m13 = center.y - (_mat4_temp_1.m01 * m12 + _mat4_temp_1.m05 * m13);
+        _mat4_temp_1m[12] = center.x - (_mat4_temp_1m[0] * m12 + _mat4_temp_1m[4] * m13);
+        _mat4_temp_1m[13] = center.y - (_mat4_temp_1m[1] * m12 + _mat4_temp_1m[5] * m13);
 
         if (out !== _mat4_temp_1) {
-            mat4.copy(out, _mat4_temp_1);
+            Mat4.copy(out, _mat4_temp_1);
         }
+        return out;
+    },
+
+    /**
+     * !#en
+     * Convert point from screen to world.
+     * !#zh
+     * 将坐标从屏幕坐标系转换到世界坐标系。
+     * @method getScreenToWorldPoint
+     * @param {Vec3|Vec2} screenPosition 
+     * @param {Vec3|Vec2} [out] 
+     * @return {Vec3|Vec2} out
+     */
+    getScreenToWorldPoint (screenPosition, out) {
+        if (this.node.is3DNode) {
+            out = out || new cc.Vec3();
+            this._camera.screenToWorld(out, screenPosition, cc.visibleRect.width, cc.visibleRect.height);
+        }
+        else {
+            out = out || new cc.Vec2();
+            this.getScreenToWorldMatrix2D(_mat4_temp_1);
+            Vec2.transformMat4(out, screenPosition, _mat4_temp_1);
+        }
+        return out;
+    },
+
+    /**
+     * !#en
+     * Convert point from world to screen.
+     * !#zh
+     * 将坐标从世界坐标系转化到屏幕坐标系。
+     * @method getWorldToScreenPoint
+     * @param {Vec3|Vec2} worldPosition 
+     * @param {Vec3|Vec2} [out] 
+     * @return {Vec3|Vec2} out
+     */
+    getWorldToScreenPoint (worldPosition, out) {
+        if (this.node.is3DNode) {
+            out = out || new cc.Vec3();
+            this._camera.worldToScreen(out, worldPosition, cc.visibleRect.width, cc.visibleRect.height);
+        }
+        else {
+            out = out || new cc.Vec2();
+            this.getWorldToScreenMatrix2D(_mat4_temp_1);
+            Vec2.transformMat4(out, worldPosition, _mat4_temp_1);
+        }
+        
         return out;
     },
 
@@ -654,20 +699,20 @@ let Camera = cc.Class({
      * @return {Ray}
      */
     getRay (screenPos) {
-        if (!geomUtils) return screenPos;
+        if (!cc.geomUtils) return screenPos;
         
-        vec3.set(_v3_temp_3, screenPos.x, screenPos.y, 1);
+        Vec3.set(_v3_temp_3, screenPos.x, screenPos.y, 1);
         this._camera.screenToWorld(_v3_temp_2, _v3_temp_3, cc.visibleRect.width, cc.visibleRect.height);
 
         if (this.ortho) {
-            vec3.set(_v3_temp_3, screenPos.x, screenPos.y, -1);
+            Vec3.set(_v3_temp_3, screenPos.x, screenPos.y, -1);
             this._camera.screenToWorld(_v3_temp_1, _v3_temp_3, cc.visibleRect.width, cc.visibleRect.height);
         }
         else {
             this.node.getWorldPosition(_v3_temp_1);
         }
 
-        return geomUtils.Ray.fromPoints(geomUtils.Ray.create(), _v3_temp_1, _v3_temp_2);
+        return Ray.fromPoints(new Ray(), _v3_temp_1, _v3_temp_2);
     },
 
     /**
@@ -698,16 +743,23 @@ let Camera = cc.Class({
         // force update node world matrix
         this.node.getWorldMatrix(_mat4_temp_1);
         this.beforeDraw();
-        RenderFlow.visit(root);
-        renderer._forward.renderCamera(this._camera, renderer.scene);
+        RenderFlow.render(root);
+        if (!CC_JSB) {
+            renderer._forward.renderCamera(this._camera, renderer.scene);
+        }
     },
 
-    _layout () {
+    _onAlignWithScreen () {
         let height = cc.game.canvas.height / cc.view._scaleY;
 
         let targetTexture = this._targetTexture;
         if (targetTexture) {
-            height = targetTexture.height;
+            if (CC_EDITOR) {
+                height = cc.engine.getDesignResolutionSize().height;
+            }
+            else {
+                height = cc.visibleRect.height;
+            }
         }
 
         let fov = this._fov * cc.macro.RAD;
@@ -716,21 +768,108 @@ let Camera = cc.Class({
         fov = Math.atan(Math.tan(fov / 2) / this.zoomRatio) * 2;
         this._camera.setFov(fov);
         this._camera.setOrthoHeight(height / 2 / this.zoomRatio);
+        this.node.setRotation(0, 0, 0, 1);
     },
 
     beforeDraw () {
         if (!this._camera) return;
 
-        if (!this.node._is3DNode) {
-            this._layout();
+        if (this._alignWithScreen) {
+            this._onAlignWithScreen();
         }
         else {
-            this._camera.setFov(this._fov * cc.macro.RAD);
-            this._camera.setOrthoHeight(this._orthoSize);
+            let fov = this._fov * cc.macro.RAD;
+            fov = Math.atan(Math.tan(fov / 2) / this.zoomRatio) * 2;
+            this._camera.setFov(fov);
+
+            this._camera.setOrthoHeight(this._orthoSize / this.zoomRatio);
         }
 
         this._camera.dirty = true;
     }
+});
+
+// deprecated
+cc.js.mixin(Camera.prototype, {
+    /**
+     * !#en
+     * Returns the matrix that transform the node's (local) space coordinates into the camera's space coordinates.
+     * !#zh
+     * 返回一个将节点坐标系转换到摄像机坐标系下的矩阵
+     * @method getNodeToCameraTransform
+     * @deprecated since v2.0.0
+     * @param {Node} node - the node which should transform
+     * @return {AffineTransform}
+     */
+    getNodeToCameraTransform (node) {
+        let out = AffineTrans.identity();
+        node.getWorldMatrix(_mat4_temp_2);
+        if (this.containsNode(node)) {
+            this.getWorldToCameraMatrix(_mat4_temp_1);
+            Mat4.mul(_mat4_temp_2, _mat4_temp_2, _mat4_temp_1);
+        }
+        AffineTrans.fromMat4(out, _mat4_temp_2);
+        return out;
+    },
+
+    /**
+     * !#en
+     * Conver a camera coordinates point to world coordinates.
+     * !#zh
+     * 将一个摄像机坐标系下的点转换到世界坐标系下。
+     * @method getCameraToWorldPoint
+     * @deprecated since v2.1.3
+     * @param {Vec2} point - the point which should transform
+     * @param {Vec2} [out] - the point to receive the result
+     * @return {Vec2} out
+     */
+    getCameraToWorldPoint (point, out) {
+        return this.getScreenToWorldPoint(point, out);
+    },
+
+    /**
+     * !#en
+     * Conver a world coordinates point to camera coordinates.
+     * !#zh
+     * 将一个世界坐标系下的点转换到摄像机坐标系下。
+     * @method getWorldToCameraPoint
+     * @deprecated since v2.1.3
+     * @param {Vec2} point 
+     * @param {Vec2} [out] - the point to receive the result
+     * @return {Vec2} out
+     */
+    getWorldToCameraPoint (point, out) {
+        return this.getWorldToScreenPoint(point, out);
+    },
+
+    /**
+     * !#en
+     * Get the camera to world matrix
+     * !#zh
+     * 获取摄像机坐标系到世界坐标系的矩阵
+     * @method getCameraToWorldMatrix
+     * @deprecated since v2.1.3
+     * @param {Mat4} out - the matrix to receive the result
+     * @return {Mat4} out
+     */
+    getCameraToWorldMatrix (out) {
+        return this.getScreenToWorldMatrix2D(out);
+    },
+
+
+    /**
+     * !#en
+     * Get the world to camera matrix
+     * !#zh
+     * 获取世界坐标系到摄像机坐标系的矩阵
+     * @method getWorldToCameraMatrix
+     * @deprecated since v2.1.3
+     * @param {Mat4} out - the matrix to receive the result
+     * @return {Mat4} out
+     */
+    getWorldToCameraMatrix (out) {
+        return this.getWorldToScreenMatrix2D(out);
+    },
 });
 
 module.exports = cc.Camera = Camera;

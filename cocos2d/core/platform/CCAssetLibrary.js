@@ -1,4 +1,4 @@
-﻿/****************************************************************************
+/****************************************************************************
  Copyright (c) 2013-2016 Chukong Technologies Inc.
  Copyright (c) 2017-2018 Xiamen Yaji Software Co., Ltd.
 
@@ -93,8 +93,8 @@ var AssetLibrary = {
         }
         Loader.load(item, function (error, asset) {
             if (error || !asset) {
-                let errorInfo = error ? (error.message || error.errorMessage || error) : 'Unknown error';
-                error = new Error(`[AssetLibrary] loading JSON or dependencies failed: ${errorInfo}`);
+                let errorInfo = typeof error === 'string' ? error : (error ? (error.message || error.errorMessage || JSON.stringify(error)) : 'Unknown error');
+                error = new Error('[AssetLibrary] loading JSON or dependencies failed:' + errorInfo);
             }
             else {
                 if (asset.constructor === cc.SceneAsset) {
@@ -144,7 +144,7 @@ var AssetLibrary = {
                     error.errorCode = 'db.NOTFOUND';
                     callback(error);
                 }
-            });
+            }, -1);
         }
     },
 
@@ -400,6 +400,8 @@ let _builtins = {
     material: {}
 };
 
+let _builtinDeps = {};
+
 function loadBuiltins (name, type, cb) {
     let dirname = name  + 's';
     let builtin = _builtins[name] = {};
@@ -414,7 +416,10 @@ function loadBuiltins (name, type, cb) {
         }
         else {
             for (let i = 0; i < assets.length; i++) {
-                builtin[`${assets[i].name}`] = assets[i];
+                var asset = assets[i];
+                var deps = cc.loader.getDependsRecursively(asset);
+                deps.forEach(uuid => _builtinDeps[uuid] = true);
+                builtin[`${asset.name}`] = asset;
             }
         }
 
@@ -445,6 +450,10 @@ AssetLibrary.resetBuiltins = function () {
         effect: {},
         material: {}
     };
+    _builtinDeps = {};
 };
+AssetLibrary.getBuiltinDeps = function () {
+    return _builtinDeps;
+}
 
 module.exports = cc.AssetLibrary = AssetLibrary;

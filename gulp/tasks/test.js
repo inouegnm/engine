@@ -78,7 +78,7 @@ exports.build = function (sourceFile, outputFile, sourceFileForExtends, outputFi
             {
                 sourcemaps: sourcemaps,
                 babelifyOpt: {
-                    presets: ['env'],
+                    presets: [require('@babel/preset-env')],
                     ast: false,
                     babelrc: false,
                     highlightCode: false,
@@ -118,27 +118,36 @@ exports.test = function (callback) {
     try {
         qunit = require('gulp-qunit');
     } catch (e) {
-        console.error('Please run "npm install gulp-qunit" before running "gulp test".');
+        console.error('Please run "npm install gulp-qunit@2.0.1 -g" before running "gulp test".');
         throw e;
     }
     return Gulp.src('bin/qunit-runner.html')
-        .pipe(qunit({ timeout: 5 }))
+        .pipe(qunit({ timeout: 10 }))
         .on('end', callback);
 };
 
 exports.buildTestCase = function (outDir, callback) {
     return Gulp.src('test/qunit/unit/**/*.js')
         .pipe(Babel({
-            presets: ['env'],
+            presets: [require('@babel/preset-env')],
             plugins: [
                 // make sure that transform-decorators-legacy comes before transform-class-properties.
-                'transform-decorators-legacy',
-                'transform-class-properties',
+                [
+                    require('@babel/plugin-proposal-decorators'),
+                    { legacy: true },
+                ],
+                [
+                    require('@babel/plugin-proposal-class-properties'),
+                    { loose: true },
+                ],
+                [
+                    require('babel-plugin-add-module-exports'),
+                ],
             ],
             ast: false,
             babelrc: false,
             highlightCode: false,
-            sourceMaps: true,
+            sourceMap: true,
             compact: false
         }))
         .pipe(Gulp.dest(outDir))

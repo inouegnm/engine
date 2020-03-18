@@ -2,13 +2,12 @@
 
 import { RecyclePool } from '../memop';
 import enums from '../enums';
-import { vec2, vec3, vec4, mat2, mat3, mat4, color3, color4 } from '../../core/vmath';
+import { Vec2, Vec4, Mat3, Mat4, Color, Vec3 } from '../../core/value-types';
 import ProgramLib from './program-lib';
 import View from './view';
 import gfx from '../gfx';
 
-let _m3_tmp = mat3.create();
-let _m4_tmp = mat4.create();
+let _m4_tmp = new Mat4();
 
 let _stageInfos = new RecyclePool(() => {
   return {
@@ -57,228 +56,6 @@ let _int64_pool = new RecyclePool(() => {
   return new Int32Array(64);
 }, 8);
 
-let _type2uniformValue = {
-  [enums.PARAM_INT]: function (value) {
-    return value;
-  },
-
-  [enums.PARAM_INT2]: function (value) {
-    return vec2.array(_int2_pool.add(), value);
-  },
-
-  [enums.PARAM_INT3]: function (value) {
-    return vec3.array(_int3_pool.add(), value);
-  },
-
-  [enums.PARAM_INT4]: function (value) {
-    return vec4.array(_int4_pool.add(), value);
-  },
-
-  [enums.PARAM_FLOAT]: function (value) {
-    return value;
-  },
-
-  [enums.PARAM_FLOAT2]: function (value) {
-    return vec2.array(_float2_pool.add(), value);
-  },
-
-  [enums.PARAM_FLOAT3]: function (value) {
-    return vec3.array(_float3_pool.add(), value);
-  },
-
-  [enums.PARAM_FLOAT4]: function (value) {
-    return vec4.array(_float4_pool.add(), value);
-  },
-
-  [enums.PARAM_COLOR3]: function (value) {
-    return color3.array(_float3_pool.add(), value);
-  },
-
-  [enums.PARAM_COLOR4]: function (value) {
-    return color4.array(_float4_pool.add(), value);
-  },
-
-  [enums.PARAM_MAT2]: function (value) {
-    return mat2.array(_float4_pool.add(), value);
-  },
-
-  [enums.PARAM_MAT3]: function (value) {
-    return mat3.array(_float9_pool.add(), value);
-  },
-
-  [enums.PARAM_MAT4]: function (value) {
-    return mat4.array(_float16_pool.add(), value);
-  },
-
-  // [enums.PARAM_TEXTURE_2D]: function (value) {
-  // },
-
-  // [enums.PARAM_TEXTURE_CUBE]: function (value) {
-  // },
-};
-
-let _type2uniformArrayValue = {
-  [enums.PARAM_INT]: {
-    func (values) {
-      let result = _int64_pool.add();
-      for (let i = 0; i < values.length; ++i) {
-        result[i] = values[i];
-      }
-      return result;
-    },
-    size: 1,
-  },
-
-  [enums.PARAM_INT2]: {
-    func (values) {
-      let result = _int64_pool.add();
-      for (let i = 0; i < values.length; ++i) {
-        result[2 * i] = values[i].x;
-        result[2 * i + 1] = values[i].y;
-      }
-      return result;
-    },
-    size: 2,
-  },
-
-  [enums.PARAM_INT3]: {
-    func: undefined,
-    size: 3,
-  },
-
-  [enums.PARAM_INT4]: {
-    func (values) {
-      let result = _int64_pool.add();
-      for (let i = 0; i < values.length; ++i) {
-        let v = values[i];
-        result[4 * i] = v.x;
-        result[4 * i + 1] = v.y;
-        result[4 * i + 2] = v.z;
-        result[4 * i + 3] = v.w;
-      }
-      return result;
-    },
-    size: 4,
-  },
-
-  [enums.PARAM_FLOAT]: {
-    func (values) {
-      let result = _float64_pool.add();
-      for (let i = 0; i < values.length; ++i) {
-        result[i] = values[i];
-      }
-      return result;
-    },
-    size: 1
-  },
-
-  [enums.PARAM_FLOAT2]: {
-    func (values) {
-      let result = _float64_pool.add();
-      for (let i = 0; i < values.length; ++i) {
-        result[2 * i] = values[i].x;
-        result[2 * i + 1] = values[i].y;
-      }
-      return result;
-    },
-    size: 2,
-  },
-
-  [enums.PARAM_FLOAT3]: {
-    func: undefined,
-    size: 3,
-  },
-
-  [enums.PARAM_FLOAT4]: {
-    func (values) {
-      let result = _float64_pool.add();
-      for (let i = 0; i < values.length; ++i) {
-        let v = values[i];
-        result[4 * i] = v.x;
-        result[4 * i + 1] = v.y;
-        result[4 * i + 2] = v.z;
-        result[4 * i + 3] = v.w;
-      }
-      return result;
-    },
-    size: 4,
-  },
-
-  [enums.PARAM_COLOR3]: {
-    func: undefined,
-    size: 3,
-  },
-
-  [enums.PARAM_COLOR4]: {
-    func (values) {
-      let result = _float64_pool.add();
-      for (let i = 0; i < values.length; ++i) {
-        let v = values[i];
-        result[4 * i] = v.r;
-        result[4 * i + 1] = v.g;
-        result[4 * i + 2] = v.b;
-        result[4 * i + 3] = v.a;
-      }
-      return result;
-    },
-    size: 4,
-  },
-
-  [enums.PARAM_MAT2]: {
-    func (values) {
-      let result = _float64_pool.add();
-      for (let i = 0; i < values.length; ++i) {
-        let v = values[i];
-        result[4 * i] = v.m00;
-        result[4 * i + 1] = v.m01;
-        result[4 * i + 2] = v.m02;
-        result[4 * i + 3] = v.m03;
-      }
-      return result;
-    },
-    size: 4
-  },
-
-  [enums.PARAM_MAT3]: {
-    func: undefined,
-    size: 9
-  },
-
-
-  [enums.PARAM_MAT4]: {
-    func (values) {
-      let result = _float64_pool.add();
-      for (let i = 0; i < values.length; ++i) {
-        let v = values[i];
-        result[16 * i] = v.m00;
-        result[16 * i + 1] = v.m01;
-        result[16 * i + 2] = v.m02;
-        result[16 * i + 3] = v.m03;
-        result[16 * i + 4] = v.m04;
-        result[16 * i + 5] = v.m05;
-        result[16 * i + 6] = v.m06;
-        result[16 * i + 7] = v.m07;
-        result[16 * i + 8] = v.m08;
-        result[16 * i + 9] = v.m09;
-        result[16 * i + 10] = v.m10;
-        result[16 * i + 11] = v.m11;
-        result[16 * i + 12] = v.m12;
-        result[16 * i + 13] = v.m13;
-        result[16 * i + 14] = v.m14;
-        result[16 * i + 15] = v.m15;
-      }
-      return result;
-    },
-    size: 16
-  },
-
-  // [enums.PARAM_TEXTURE_2D]: function (value) {
-  // },
-
-  // [enums.PARAM_TEXTURE_CUBE]: function (value) {
-  // },
-};
-
 export default class Base {
   /**
    * @param {gfx.Device} device
@@ -286,24 +63,22 @@ export default class Base {
    * @param {gfx.Texture2D} opts.defaultTexture
    * @param {gfx.TextureCube} opts.defaultTextureCube
    */
-  constructor(device, opts) {
+  constructor (device, opts) {
     this._device = device;
     this._programLib = new ProgramLib(device);
     this._opts = opts;
     this._type2defaultValue = {
       [enums.PARAM_INT]: 0,
-      [enums.PARAM_INT2]: vec2.create(0, 0),
-      [enums.PARAM_INT3]: vec3.create(0, 0, 0),
-      [enums.PARAM_INT4]: vec4.create(0, 0, 0, 0),
+      [enums.PARAM_INT2]: new Vec2(0, 0),
+      [enums.PARAM_INT3]: new Vec3(0, 0, 0),
+      [enums.PARAM_INT4]: new Vec4(0, 0, 0, 0),
       [enums.PARAM_FLOAT]: 0.0,
-      [enums.PARAM_FLOAT2]: vec2.create(0, 0),
-      [enums.PARAM_FLOAT3]: vec3.create(0, 0, 0),
-      [enums.PARAM_FLOAT4]: vec4.create(0, 0, 0, 0),
-      [enums.PARAM_COLOR3]: color3.create(0, 0, 0),
-      [enums.PARAM_COLOR4]: color4.create(0, 0, 0, 1),
-      [enums.PARAM_MAT2]: mat2.create(),
-      [enums.PARAM_MAT3]: mat3.create(),
-      [enums.PARAM_MAT4]: mat4.create(),
+      [enums.PARAM_FLOAT2]: new Vec2(0, 0),
+      [enums.PARAM_FLOAT3]: new Vec3(0, 0, 0),
+      [enums.PARAM_FLOAT4]: new Vec4(0, 0, 0, 0),
+      [enums.PARAM_COLOR4]: new Color(0, 0, 0, 1),
+      [enums.PARAM_MAT3]: new Mat3(),
+      [enums.PARAM_MAT4]: new Mat4(),
       [enums.PARAM_TEXTURE_2D]: opts.defaultTexture,
       [enums.PARAM_TEXTURE_CUBE]: opts.defaultTextureCube,
     };
@@ -333,7 +108,7 @@ export default class Base {
           ia: null,
           effect: null,
           defines: null,
-          technique: null,
+          passes: [],
           sortKey: -1,
           uniforms: null
         };
@@ -341,11 +116,11 @@ export default class Base {
     }, 16);
   }
 
-  _resetTextuerUnit() {
+  _resetTextuerUnit () {
     this._usedTextureUnits = 0;
   }
 
-  _allocTextureUnit() {
+  _allocTextureUnit () {
     const device = this._device;
 
     let unit = this._usedTextureUnits;
@@ -357,7 +132,7 @@ export default class Base {
     return unit;
   }
 
-  _registerStage(name, fn) {
+  _registerStage (name, fn) {
     this._stage2fn[name] = fn;
   }
 
@@ -366,16 +141,16 @@ export default class Base {
     this.reset();
   }
 
-  reset() {
+  reset () {
     this._viewPools.reset();
     this._stageItemsPools.reset();
   }
 
-  _requestView() {
+  _requestView () {
     return this._viewPools.add();
   }
 
-  _render(view, scene) {
+  _render (view, scene) {
     const device = this._device;
 
     // setup framebuffer
@@ -392,12 +167,7 @@ export default class Base {
     // setup clear
     let clearOpts = {};
     if (view._clearFlags & enums.CLEAR_COLOR) {
-      clearOpts.color = [
-        view._color.r,
-        view._color.g,
-        view._color.b,
-        view._color.a
-      ];
+      clearOpts.color = Vec4.toArray([], view._color);
     }
     if (view._clearFlags & enums.CLEAR_DEPTH) {
       clearOpts.depth = view._depth;
@@ -422,10 +192,6 @@ export default class Base {
       model.extractDrawItem(drawItem);
     }
 
-    // TODO: update frustum
-    // TODO: visbility test
-    // frustum.update(view._viewProj);
-
     // dispatch draw items to different stage
     _stageInfos.reset();
 
@@ -436,19 +202,18 @@ export default class Base {
 
       for (let j = 0; j < this._drawItemsPools.length; ++j) {
         let drawItem = this._drawItemsPools.data[j];
-        let tech = drawItem.effect.getTechnique(stage);
+        let passes = drawItem.effect.stagePasses[stage];
+        if (!passes || passes.length === 0) continue;
 
-        if (tech) {
-          let stageItem = stageItems.add();
-          stageItem.model = drawItem.model;
-          stageItem.node = drawItem.node;
-          stageItem.ia = drawItem.ia;
-          stageItem.effect = drawItem.effect;
-          stageItem.defines = drawItem.defines;
-          stageItem.technique = tech;
-          stageItem.sortKey = -1;
-          stageItem.uniforms = drawItem.uniforms;
-        }
+        let stageItem = stageItems.add();
+        stageItem.passes = passes;
+        stageItem.model = drawItem.model;
+        stageItem.node = drawItem.node;
+        stageItem.ia = drawItem.ia;
+        stageItem.effect = drawItem.effect;
+        stageItem.defines = drawItem.defines;
+        stageItem.sortKey = -1;
+        stageItem.uniforms = drawItem.uniforms;
       }
 
       let stageInfo = _stageInfos.add();
@@ -460,7 +225,6 @@ export default class Base {
     for (let i = 0; i < _stageInfos.length; ++i) {
       let info = _stageInfos.data[i];
       let fn = this._stage2fn[info.stage];
-
       fn(view, info.items);
     }
   }
@@ -486,9 +250,9 @@ export default class Base {
       prop.type === enums.PARAM_TEXTURE_2D ||
       prop.type === enums.PARAM_TEXTURE_CUBE
     ) {
-      if (prop.size !== undefined) {
-        if (prop.size !== param.length) {
-          console.error(`The length of texture array (${param.length}) is not corrent(expect ${prop.size}).`);
+      if (Array.isArray(param)) {
+        if (param.length > prop.count) {
+          console.error(`Failed to set property [${prop.name}] : The length of texture array [${param.length}] is bigger than [${prop.count}].`);
           return;
         }
         let slots = _int64_pool.add();
@@ -500,34 +264,19 @@ export default class Base {
         device.setTexture(prop.name, param, this._allocTextureUnit());
       }
     } else {
-      let convertedValue;
-      if (param instanceof Float32Array || param instanceof Int32Array) {
+      if (prop.directly) {
         device.setUniformDirectly(prop.name, param);
-        return;
       }
-      else if (prop.size !== undefined) {
-        let convertArray = _type2uniformArrayValue[prop.type];
-        if (convertArray.func === undefined) {
-          console.error('Uniform array of color3/int3/float3/mat3 can not be supportted!');
-          return;
-        }
-        if (prop.size * convertArray.size > 64) {
-          console.error('Uniform array is too long!');
-          return;
-        }
-        convertedValue = convertArray.func(param);
-      } else {
-        let convertFn = _type2uniformValue[prop.type];
-        convertedValue = convertFn(param);
+      else {
+        device.setUniform(prop.name, param);
       }
-      device.setUniform(prop.name, convertedValue);
     }
   }
 
-  _draw(item) {
+  _draw (item) {
     const device = this._device;
     const programLib = this._programLib;
-    const { node, ia, uniforms, technique, defines, effect } = item;
+    const { node, ia, passes, effect } = item;
 
     // reset the pool
     // NOTE: we can use drawCounter optimize this
@@ -547,25 +296,19 @@ export default class Base {
     // TODO: try commit this depends on effect
     // {
     node.getWorldMatrix(_m4_tmp);
-    device.setUniform('cc_matWorld', mat4.array(_float16_pool.add(), _m4_tmp));
+    device.setUniform('cc_matWorld', Mat4.toArray(_float16_pool.add(), _m4_tmp));
 
-    let inverse = mat3.invert(_m3_tmp, mat3.fromMat4(_m3_tmp, _m4_tmp));
-    if (inverse) {
-      mat3.transpose(_m3_tmp, inverse);
-      device.setUniform('cc_matWorldIT', mat3.array(_float9_pool.add(), _m3_tmp));
-    }
+    // let wq = node.getWorldRotation(cc.quat());
+    Mat4.invert(_m4_tmp, _m4_tmp);
+    Mat4.transpose(_m4_tmp, _m4_tmp);
+    device.setUniform('cc_matWorldIT', Mat4.toArray(_float16_pool.add(), _m4_tmp));
     // }
 
-    for (let i = 0; i < uniforms.length; i++) {
-      let typeUniforms = uniforms[i];
-      for (let key in typeUniforms) {
-        this._setProperty(typeUniforms[key]);
-      }
-    }
+    let defines = this._defines;
 
     // for each pass
-    for (let i = 0; i < technique._passes.length; ++i) {
-      let pass = technique._passes[i];
+    for (let i = 0; i < passes.length; ++i) {
+      let pass = passes[i];
       let count = ia.count;
 
       // set vertex buffer
@@ -582,8 +325,19 @@ export default class Base {
       device.setPrimitiveType(ia._primitiveType);
 
       // set program
-      let program = programLib.getProgram(pass._programName, defines, effect._name);
+      Object.setPrototypeOf(defines, pass._defines);
+
+      let program = programLib.getProgram(pass._programName, defines, effect.name);
       device.setProgram(program);
+
+      let uniforms = program._uniforms;
+      let variants = pass._properties;
+      for (let j = 0; j < uniforms.length; j++) {
+        let prop = variants[uniforms[j].name];
+        if (prop !== undefined)
+        this._setProperty(prop);
+      }
+
 
       // cull mode
       device.setCullMode(pass._cullMode);

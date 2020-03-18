@@ -46,6 +46,7 @@ let Particle = function () {
     this.deltaRotation = 0;
     this.timeToLive = 0;
     this.drawPos = cc.v2(0, 0);
+    this.aspectRatio = 1;
     // Mode A
     this.dir = cc.v2(0, 0);
     this.radialAccel = 0;
@@ -69,6 +70,7 @@ let pool = new js.Pool(function (par) {
     par.deltaRotation = 0;
     par.timeToLive = 0;
     par.drawPos.set(ZERO_VEC2);
+    par.aspectRatio = 1;
     // Mode A
     par.dir.set(ZERO_VEC2);
     par.radialAccel = 0;
@@ -87,6 +89,7 @@ let Simulator = function (system) {
     this.sys = system;
     this.particles = [];
     this.active = false;
+    this.readyToPlay = true;
     this.finished = false;
     this.elapsed = 0;
     this.emitCounter = 0;
@@ -95,12 +98,14 @@ let Simulator = function (system) {
 
 Simulator.prototype.stop = function () {
     this.active = false;
+    this.readyToPlay = false;
     this.elapsed = this.sys.duration;
     this.emitCounter = 0;
 }
 
 Simulator.prototype.reset = function () {
     this.active = true;
+    this.readyToPlay = true;
     this.elapsed = 0;
     this.emitCounter = 0;
     this.finished = false;
@@ -161,6 +166,9 @@ Simulator.prototype.emitParticle = function (pos) {
     particle.startPos.x = pos.x;
     particle.startPos.y = pos.y;
 
+    // aspect ratio
+    particle.aspectRatio = psys._aspectRatio || 1;
+
     // direction
     let worldRotation = getWorldRotation(psys.node);
     let relAngle = psys.positionType === cc.ParticleSystem.PositionType.FREE ? psys.angle + worldRotation : psys.angle;
@@ -204,13 +212,18 @@ function getWorldRotation (node) {
 }
 
 Simulator.prototype.updateUVs = function (force) {
-    let particleCount = this.particles.length;
-    if (this.sys._buffer && this.sys._renderSpriteFrame) {
-        const FLOAT_PER_PARTICLE = 4 * this.sys._vertexFormat._bytes / 4;
-        let vbuf = this.sys._buffer._vData;
+    let assembler = this.sys._assembler;
+    if (!assembler) {
+        return;
+    }
+    let buffer = assembler.getBuffer();
+    if (buffer && this.sys._renderSpriteFrame) {
+        const FLOAT_PER_PARTICLE = 4 * assembler._vfmt._bytes / 4;
+        let vbuf = buffer._vData;
         let uv = this.sys._renderSpriteFrame.uv;
 
         let start = force ? 0 : this._uvFilled;
+        let particleCount = this.particles.length;
         for (let i = start; i < particleCount; i++) {
             let offset = i * FLOAT_PER_PARTICLE;
             vbuf[offset+2] = uv[0];
@@ -229,13 +242,18 @@ Simulator.prototype.updateUVs = function (force) {
 Simulator.prototype.updateParticleBuffer = function (particle, pos, buffer, offset) {
     let vbuf = buffer._vData;
     let uintbuf = buffer._uintVData;
-    
+
     let x = pos.x, y = pos.y;
-    let size_2 = particle.size / 2;
+    let width = particle.size;
+    let height = width;
+    let aspectRatio = particle.aspectRatio;
+    aspectRatio > 1 ? (height = width / aspectRatio) : (width = height * aspectRatio);
+    let halfWidth = width / 2;
+    let halfHeight = height / 2;
     // pos
     if (particle.rotation) {
-        let x1 = -size_2, y1 = -size_2;
-        let x2 = size_2, y2 = size_2;
+        let x1 = -halfWidth, y1 = -halfHeight;
+        let x2 = halfWidth, y2 = halfHeight;
         let rad = -misc.degreesToRadians(particle.rotation);
         let cr = Math.cos(rad), sr = Math.sin(rad);
         // bl
@@ -253,17 +271,17 @@ Simulator.prototype.updateParticleBuffer = function (particle, pos, buffer, offs
     }
     else {
         // bl
-        vbuf[offset] = x - size_2;
-        vbuf[offset+1] = y - size_2;
+        vbuf[offset] = x - halfWidth;
+        vbuf[offset+1] = y - halfHeight;
         // br
-        vbuf[offset+5] = x + size_2;
-        vbuf[offset+6] = y - size_2;
+        vbuf[offset+5] = x + halfWidth;
+        vbuf[offset+6] = y - halfHeight;
         // tl
-        vbuf[offset+10] = x - size_2;
-        vbuf[offset+11] = y + size_2;
+        vbuf[offset+10] = x - halfWidth;
+        vbuf[offset+11] = y + halfHeight;
         // tr
-        vbuf[offset+15] = x + size_2;
-        vbuf[offset+16] = y + size_2;
+        vbuf[offset+15] = x + halfWidth;
+        vbuf[offset+16] = y + halfHeight;
     }
     // color
     uintbuf[offset+4] = particle.color._val;
@@ -273,25 +291,27 @@ Simulator.prototype.updateParticleBuffer = function (particle, pos, buffer, offs
 };
 
 Simulator.prototype.step = function (dt) {
+    dt = dt > cc.director._maxParticleDeltaTime ? cc.director._maxParticleDeltaTime : dt;
     let psys = this.sys;
     let node = psys.node;
     let particles = this.particles;
-    const FLOAT_PER_PARTICLE = 4 * psys._vertexFormat._bytes / 4;
+    const FLOAT_PER_PARTICLE = 4 * this.sys._assembler._vfmt._bytes / 4;
 
     // Calculate pos
     node._updateWorldMatrix();
     _trans = AffineTrans.identity();
     if (psys.positionType === cc.ParticleSystem.PositionType.FREE) {
-        _trans.tx = node._worldMatrix.m12;
-        _trans.ty = node._worldMatrix.m13;
+        let m =  node._worldMatrix.m;
+        _trans.tx = m[12];
+        _trans.ty = m[13];
         AffineTrans.transformVec2(_pos, ZERO_VEC2, _trans);
     } else if (psys.positionType === cc.ParticleSystem.PositionType.RELATIVE) {
         let angle = misc.degreesToRadians(-node.angle);
         let cos = Math.cos(angle);
         let sin = Math.sin(angle);
         _trans = AffineTrans.create(cos, -sin, sin, cos, 0, 0);
-        _pos.x = node._position.x;
-        _pos.y = node._position.y;
+        _pos.x = node.x;
+        _pos.y = node.y;
     }
 
     // Get world to node trans only once
@@ -317,7 +337,7 @@ Simulator.prototype.step = function (dt) {
     }
 
     // Request buffer for particles
-    let buffer = psys._buffer;
+    let buffer = psys._assembler.getBuffer();
     let particleCount = particles.length;
     buffer.reset();
     buffer.request(particleCount * 4, particleCount * 6);
@@ -396,7 +416,8 @@ Simulator.prototype.step = function (dt) {
             let newPos = _tpa;
             let diff = _tpb;
             if (psys.positionType === cc.ParticleSystem.PositionType.FREE) {
-                diff.subSelf(particle.startPos);
+                diff.set(particle.startPos);
+                diff.negSelf();  // Unify direction with other positionType
                 newPos.set(particle.pos);
                 newPos.subSelf(diff);
             }
@@ -431,9 +452,9 @@ Simulator.prototype.step = function (dt) {
 
     if (particles.length > 0) {
         buffer.uploadData();
-        psys._ia._count = particles.length * 6;
+        psys._assembler._ia._count = particles.length * 6;
     }
-    else if (!this.active) {
+    else if (!this.active && !this.readyToPlay) {
         this.finished = true;
         psys._finishedSimulation();
     }
