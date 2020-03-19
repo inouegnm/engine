@@ -42,6 +42,7 @@ const CHAR_CODE_1 = 49;    // '1'
 
 var idGenerater = new (require('../platform/id-generater'))('Tex');
 
+
 /**
  * <p>
  * This class allows to easily create OpenGL or Canvas 2D textures from images, text or raw data.                                    <br/>
@@ -612,6 +613,8 @@ var Texture2D = cc.Class({
      * @return {Boolean} inherit from the CCObject
      */
     destroy () {
+        this._packable && cc.dynamicAtlasManager && cc.dynamicAtlasManager.deleteAtlasTexture(this);
+
         this._image = null;
         this._texture && this._texture.destroy();
         // TODO cc.textureUtil ?
@@ -850,7 +853,6 @@ var Texture2D = cc.Class({
         let w = this.width, h = this.height;
         if (!this._image ||
             w > dynamicAtlas.maxFrameSize || h > dynamicAtlas.maxFrameSize || 
-            w <= dynamicAtlas.minFrameSize || h <= dynamicAtlas.minFrameSize || 
             this._getHash() !== dynamicAtlas.Atlas.DEFAULT_HASH) {
             this._packable = false;
             return;
