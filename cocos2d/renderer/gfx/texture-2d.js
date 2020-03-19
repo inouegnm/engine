@@ -3,6 +3,8 @@ import Texture from './texture';
 import { enums, glFilter, glTextureFmt } from './enums';
 import { isPow2 } from './misc';
 
+//const ArrayBufferView = Object.getPrototypeOf(Object.getPrototypeOf(new Uint8Array()).constructor
+
 /**
  * @typedef {HTMLImageElement | HTMLCanvasElement | HTMLVideoElement} HTMLImageSource
  * @typedef {HTMLImageSource | ArrayBufferView } ImageSource
@@ -12,10 +14,12 @@ import { isPow2 } from './misc';
  */
 
 export default class Texture2D extends Texture {
+
   /**
    * @constructor
    * @param {Device} device
    * @param {TextureUpdateOpts} options
+   * new cc.Texture2Dでこのコンストラクタを通ります。こちらで何かしらのテクスチャを作成する場合は,引数の設定が必要です.
    */
   constructor(device, options) {
     super(device);
@@ -37,7 +41,9 @@ export default class Texture2D extends Texture {
 
     } else {      
       this.update(options);
+
     }
+
   }
 
   /**
@@ -75,10 +81,10 @@ export default class Texture2D extends Texture {
       }
       if (options.format !== undefined) {
         this._format = options.format;
-        this._compressed = 
-          (this._format >= enums.TEXTURE_FMT_RGB_DXT1 && this._format <= enums.TEXTURE_FMT_RGBA_PVRTC_4BPPV1) || 
+        this._compressed =
+          (this._format >= enums.TEXTURE_FMT_RGB_DXT1 && this._format <= enums.TEXTURE_FMT_RGBA_PVRTC_4BPPV1) ||
           (this._format >= enums.TEXTURE_FMT_RGB_ETC2 && this._format <= enums.TEXTURE_FMT_RGBA_ETC2)
-        ;
+          ;
       }
 
       // check if generate mipmap
@@ -339,7 +345,7 @@ export default class Texture2D extends Texture {
       gl.texParameteri(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, this._anisotropy);
     }
   }
-  
+
   /**
    * ビデオデータのテクスチャ変換用の初期化処理.
    * @method _initVideoTexture
@@ -378,5 +384,9 @@ export default class Texture2D extends Texture {
 
       return;
     }
+
   }
+
+
+
 }
